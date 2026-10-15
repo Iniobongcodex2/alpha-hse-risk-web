@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}{{ assessment.reference }} — ALPHA HSE RISK{% endblock %}
+{% block header_title %}Assessment{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <p style="font-size:12px; color:#6B7280;">Reference</p>
+    <p style="font-size:16px; color:#C9A961; font-weight:bold; margin-bottom:10px;">
+        {{ assessment.reference }}
+    </p>
+
+    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Organization</p>
+    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
+        {{ assessment.organization or '—' }}
+    </p>
+
+    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Department</p>
+    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
+        {{ assessment.department or '—' }}
+    </p>
+
+    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Location / Site</p>
+    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
+        {{ assessment.location or '—' }}
+    </p>
+
+    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Project</p>
+    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
+        {{ assessment.project or '—' }}
+    </p>
+
+    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Assessor</p>
+    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
+        {{ assessment.assessor or '—' }}
+    </p>
+
+    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Date Created</p>
+    <p style="font-size:13px; color:#6B7280;">
+        {{ assessment.date_created or '—' }}
+    </p>
+</div>
+
+{% for h in hazards %}
+<div class="card" style="border-left:4px solid
+    {% if h.residual_level == 'Critical' %}#8B0000
+    {% elif h.residual_level == 'High' %}#D97706
+    {% elif h.residual_level == 'Medium' %}#C9A961
+    {% else %}#4A7C59{% endif %};">
+
+    <h3 style="font-size:14px; color:#0F1E3D; margin-bottom:10px;">
+        Hazard {{ loop.index }} — {{ h.category or '—' }}
+    </h3>
+
+    <p style="font-size:12px; color:#6B7280;">Hazard Name</p>
+    <p style="font-size:14px; color:#0F1E3D; font-weight:600; margin-bottom:8px;">
+        {{ h.name or '—' }}
+    </p>
+
+    <div style="display:flex; gap:10px; margin-bottom:8px;">
+        <div style="flex:1; background:#F3F4F6; padding:8px; border-radius:6px;">
+            <p style="font-size:11px; color:#6B7280;">Initial Score</p>
+            <p style="font-size:15px; color:#0F1E3D; font-weight:bold;">
+                {{ h.risk_score or 0 }} ({{ h.risk_level or '—' }})
+            </p>
+        </div>
+        <div style="flex:1; background:#F3F4F6; padding:8px; border-radius:6px;">
+            <p style="font-size:11px; color:#6B7280;">Residual Score</p>
+            <p style="font-size:15px; color:#0F1E3D; font-weight:bold;">
+                {{ h.residual_score or 0 }} ({{ h.residual_level or '—' }})
+            </p>
+        </div>
+    </div>
+
+    <p style="font-size:12px; color:#6B7280;">Existing Controls</p>
+    <p style="font-size:13px; color:#0F1E3D; margin-bottom:8px;">
+        {{ h.existing_controls or '—' }}
+    </p>
+
+    <p style="font-size:12px; color:#6B7280;">Additional Controls</p>
+    <p style="font-size:13px; color:#0F1E3D; margin-bottom:8px;">
+        {{ h.additional_controls or '—' }}
+    </p>
+
+    <p style="font-size:12px; color:#6B7280;">Action</p>
+    <p style="font-size:13px; color:#0F1E3D; font-weight:600;">
+        {{ h.action or '—' }}
+    </p>
+
+</div>
+{% endfor %}
+
+<a href="/assessment/{{ assessment.id }}/pdf"
+   class="btn-primary btn-green"
+   style="display:block; margin-top:14px;">
+    📄 Download PDF
+</a>
+
+<button onclick="shareAssessment()"
+        style="display:block; margin-top:10px; width:100%; background:#C9A961; color:#0F1E3D; border:none; padding:16px; border-radius:10px; font-size:16px; font-weight:bold; min-height:54px; cursor:pointer;">
+    📤 Share
+</button>
+
+<a href="/history" class="btn-primary" style="display:block; margin-top:14px; background:#0F1E3D; color:#C9A961;">
+    ← Back to History
+</a>
+
+<script>
+function shareAssessment() {
+    const url = window.location.href;
+    const title = "{{ assessment.reference }}";
+    if (navigator.share) {
+        navigator.share({
+            title: title,
+            text: "ALPHA HSE RISK Assessment: " + title,
+            url: url
+        }).catch(() => {});
+    } else {
+        navigator.clipboard.writeText(url).then(() => {
+            alert("Link copied to clipboard: " + url);
+        });
+    }
+}
+</script>
+
+{% endblock %}

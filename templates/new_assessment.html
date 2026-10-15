@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}New Assessment — ALPHA HSE RISK{% endblock %}
+{% block header_title %}New Assessment{% endblock %}
+
+{% block content %}
+
+<form method="POST" action="/new">
+
+    <div class="card">
+        <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Assessment Details</h2>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Organization</label>
+        <input type="text" name="organization" placeholder="Organization" required
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Department</label>
+        <input type="text" name="department" placeholder="Department"
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Location / Site</label>
+        <input type="text" name="location" placeholder="Location"
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Project</label>
+        <input type="text" name="project" placeholder="Project"
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+    </div>
+
+    <div class="card">
+        <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Hazard</h2>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Category</label>
+        <select name="category" required
+                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+            <option value="Occupational Health">Occupational Health</option>
+            <option value="Working at Height">Working at Height</option>
+            <option value="Slips and Trips">Slips and Trips</option>
+            <option value="Lone Working">Lone Working</option>
+            <option value="Ergonomics">Ergonomics</option>
+            <option value="Hazardous Substances">Hazardous Substances</option>
+            <option value="Confined Spaces">Confined Spaces</option>
+            <option value="Manual Handling">Manual Handling</option>
+            <option value="Work Environment">Work Environment</option>
+            <option value="Work Equipment and Machinery">Work Equipment and Machinery</option>
+        </select>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Hazard Name</label>
+        <input type="text" name="hazard_name" placeholder="Enter hazard" required
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+        <div style="display:flex; gap:10px;">
+            <div style="flex:1;">
+                <label style="font-size:13px; color:#6B7280; font-weight:600;">Severity (1-5)</label>
+                <input type="number" name="severity" min="1" max="5" placeholder="1-5" required
+                       style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:13px; color:#6B7280; font-weight:600;">Likelihood (1-5)</label>
+                <input type="number" name="likelihood" min="1" max="5" placeholder="1-5" required
+                       style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+            </div>
+        </div>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Existing Controls</label>
+        <textarea name="existing_controls" placeholder="What controls exist already?"
+                  style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:80px;"></textarea>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Additional Controls</label>
+        <textarea name="additional_controls" placeholder="What more is required?"
+                  style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:80px;"></textarea>
+    </div>
+
+    <div class="card">
+        <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Residual Risk</h2>
+
+        <div style="display:flex; gap:10px;">
+            <div style="flex:1;">
+                <label style="font-size:13px; color:#6B7280; font-weight:600;">Residual Severity</label>
+                <input type="number" name="residual_severity" min="1" max="5" placeholder="1-5" required
+                       style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:13px; color:#6B7280; font-weight:600;">Residual Likelihood</label>
+                <input type="number" name="residual_likelihood" min="1" max="5" placeholder="1-5" required
+                       style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn-primary btn-green" style="margin-top:10px;">
+        💾 Save Assessment
+    </button>
+
+</form>
+
+{% endblock %}

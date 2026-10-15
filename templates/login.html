@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Login — ALPHA HSE RISK{% endblock %}
+{% block header_title %}Login{% endblock %}
+
+{% block content %}
+
+<div class="card" style="text-align:center;">
+    <div style="font-size:48px; margin-bottom:12px;">🔐</div>
+    <h2 style="font-size:18px; color:#0F1E3D; margin-bottom:6px;">Welcome Back</h2>
+    <p style="font-size:13px; color:#6B7280;">Sign in to continue</p>
+</div>
+
+<form method="POST" action="/login">
+    <div class="card">
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Username</label>
+        <input type="text" name="username" placeholder="Enter username" required
+               style="width:100%; padding:14px; margin:6px 0 16px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Password</label>
+        <input type="password" name="password" placeholder="Enter password" required
+               style="width:100%; padding:14px; margin:6px 0 8px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+    </div>
+
+    <button type="submit" class="btn-primary btn-green" style="margin-top:10px;">
+        🔓 Login
+    </button>
+</form>
+
+{% if error %}
+<div class="card" style="background:#FEE2E2; border-left:4px solid #8B0000; margin-top:16px;">
+    <p style="color:#8B0000; font-weight:600; font-size:14px;">{{ error }}</p>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}History — ALPHA HSE RISK{% endblock %}
+{% block header_title %}History{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:12px;">
+        Saved Assessments ({{ assessments|length }})
+    </h2>
+
+    {% if assessments %}
+        {% for a in assessments %}
+        <a href="/assessment/{{ a.id }}" style="text-decoration:none; display:block; color:inherit;">
+            <div style="padding:14px 0; border-bottom:1px solid #E5E7EB; cursor:pointer;">
+                <p style="font-size:13px; color:#C9A961; font-weight:700;">{{ a.reference }}</p>
+                <p style="font-size:14px; color:#0F1E3D; font-weight:600; margin:4px 0;">
+                    {{ a.organization }} {% if a.project %}· {{ a.project }}{% endif %}
+                </p>
+                <p style="font-size:12px; color:#6B7280;">
+                    {{ a.hazard_count }} hazard{{ '' if a.hazard_count == 1 else 's' }} · {{ a.date_created }}
+                </p>
+            </div>
+        </a>
+        {% endfor %}
+    {% else %}
+        <p style="color:#6B7280; font-size:14px;">No assessments saved yet.</p>
+    {% endif %}
+</div>
+
+<a href="/new" class="btn-primary btn-gold" style="display:block; margin-top:20px;">
+    ➕ Create New Assessment
+</a>
+
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Profile — ALPHA HSE RISK{% endblock %}
+{% block header_title %}Profile{% endblock %}
+
+{% block content %}
+
+<div class="card" style="text-align:center;">
+    <div style="font-size:60px; margin-bottom:10px;">👤</div>
+    <p style="font-size:18px; font-weight:bold; color:#0F1E3D;">{{ full_name }}</p>
+    <p style="color:#6B7280; font-size:13px;">Username: {{ username }}</p>
+</div>
+
+<div class="card">
+    <p style="font-size:13px; color:#6B7280; margin-bottom:6px;">Role ID</p>
+    <p style="font-size:16px; color:#0F1E3D; font-weight:bold;">{{ session.role_id }}</p>
+</div>
+
+<a href="/logout" class="btn-primary" style="display:block; margin-top:20px; background:#8B0000; color:#FFFFFF;">
+    🔓 Logout
+</a>
+
+{% endblock %}

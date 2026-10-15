@@ -16,9 +16,18 @@ app.secret_key = "change-this-secret-key-later-2026"   # for session security
 # DATABASE PATH — SAME AS DESKTOP
 # ============================================
 def get_db_path():
-    data_folder = os.path.expanduser("~/Documents/ALPHA_HSE_DATA")
-    return os.path.join(data_folder, "alpha_hse_risk.db")
+    """Returns the SQLite database path.
+    Works on both local (Windows) and Render (Linux)."""
+    # Check if running on Render (they set RENDER env var)
+    if os.environ.get("RENDER"):
+        data_folder = "/opt/render/project/src/data"
+    else:
+        data_folder = os.path.expanduser("~/Documents/ALPHA_HSE_DATA")
 
+    if not os.path.exists(data_folder):
+        os.makedirs(data_folder, exist_ok=True)
+
+    return os.path.join(data_folder, "alpha_hse_risk.db")
 
 # ============================================
 # PASSWORD VERIFICATION — SAME AS DESKTOP

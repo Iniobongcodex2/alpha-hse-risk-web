@@ -156,6 +156,16 @@
             <span>Profile</span>
         </a>
     </nav>
+        <script>
+        // Register the Service Worker for offline caching
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.log('SW registration failed:', err));
+            });
+        }
+    </script>
 
 </body>
 </html>

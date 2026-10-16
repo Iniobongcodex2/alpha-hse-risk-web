@@ -696,6 +696,17 @@ def profile():
         full_name=session.get("full_name")
     )
 
+# ============================================
+# SERVICE WORKER ROUTE
+# ============================================
+@app.route('/sw.js')
+def service_worker():
+    """Serve the Service Worker from the root URL."""
+    from flask import make_response
+    response = make_response(app.send_static_file('sw.js'))
+    response.headers['Content-Type'] = 'application/javascript'
+    response.headers['Service-Worker-Allowed'] = '/'
+    return response
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)

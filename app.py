@@ -30,6 +30,147 @@ def get_db_path():
     return os.path.join(data_folder, "alpha_hse_risk.db")
 
 # ============================================
+# DATABASE SETUP — auto-create tables + seed admin
+# Safe to run on every startup.
+# ============================================
+def setup_database():
+    """Creates tables if they don't exist, and seeds the admin user."""
+    conn = sqlite3.connect(get_db_path())
+    cursor = conn.cursor()
+
+    # --- users table ---
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            username          TEXT    NOT NULL UNIQUE,
+            full_name         TEXT,
+            email             TEXT,
+            role_id           INTEGER,
+            organization_name TEXT,
+            is_active         INTEGER NOT NULL DEFAULT 1,
+            password_hash     TEXT,
+            created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # --- roles table ---
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS roles (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL UNIQUE,
+            description TEXT
+        )
+    """)
+
+    # --- Seed roles ---
+    roles = [
+        ("HSE Officer", "Creates and edits assessments"),
+        ("HSE Supervisor", "Reviews team assessments"),
+        ("HSE Manager", "Org-wide oversight and analytics"),
+        ("Administrator", "Manages users, orgs and system"),
+    ]
+    for role_name, description in roles:
+        cursor.execute(
+            "INSERT OR IGNORE INTO roles (name, description) VALUES (?, ?)",
+            (role_name, description)
+        )
+
+    # --- assessments table ---
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS assessments (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference     TEXT UNIQUE,
+            organization  TEXT,
+            department    TEXT,
+            location      TEXT,
+            assessor      TEXT,
+            project       TEXT,
+            date_created  TEXT
+        )
+    """)
+
+    # --- hazards table ---
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS hazards (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            assessment_id        INTEGER,
+            category             TEXT,
+            name                 TEXT,
+            severity             INTEGER,
+            likelihood           INTEGER,
+            risk_score           INTEGER,
+            risk_level           TEXT,
+            existing_controls    TEXT,
+            additional_controls  TEXT,
+            residual_severity    INTEGER,
+            residual_likelihood  INTEGER,
+            residual_score       INTEGER,
+            residual_level       TEXT,
+            action               TEXT
+        )
+    """)
+
+    # --- audit_log table ---
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp   TEXT DEFAULT CURRENT_TIMESTAMP,
+            username    TEXT,
+            action      TEXT,
+            target_type TEXT,
+            target_id   TEXT,
+            details     TEXT
+        )
+    """)
+
+    conn.commit()
+
+    # --- Seed admin user if none exists ---
+    row = cursor.execute("SELECT COUNT(*) FROM users").fetchone()
+    if row[0] == 0:
+        # Get the Administrator role id
+        r = cursor.execute(
+            "SELECT id FROM roles WHERE name = ?",
+            ("Administrator",)
+        ).fetchone()
+        admin_role_id = r[0] if r else None
+
+        # Hash the password
+        import hashlib
+        password = "Prosper123#"
+        iterations = 29000
+        salt = os.urandom(16)
+        pwd_bytes = password.encode("utf-8")
+        dk = hashlib.pbkdf2_hmac("sha256", pwd_bytes, salt, iterations)
+        password_hash = f"pbkdf2_sha256${iterations}${salt.hex()}${dk.hex()}"
+
+        cursor.execute("""
+            INSERT INTO users
+                (username, full_name, email, role_id, organization_name,
+                 is_active, password_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "God'stime", "Iniobong Eyibio", "godstimeisthebest55@gmail.com",
+            admin_role_id, "Shell oil", 1, password_hash
+        ))
+        conn.commit()
+        print(">>> Seeded admin user: God'stime")
+
+    conn.close()
+    print(">>> Database ready at:", get_db_path())
+
+
+# ============================================
+# RUN SETUP ON FIRST REQUEST
+# ============================================
+@app.before_request
+def _ensure_db_once():
+    """Runs setup_database() once before handling the first request."""
+    if not getattr(app, "_db_ready", False):
+        setup_database()
+        app._db_ready = True
+
+# ============================================
 # PASSWORD VERIFICATION — SAME AS DESKTOP
 # ============================================
 def verify_password(password, stored_hash):

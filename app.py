@@ -4,6 +4,8 @@
 # ============================================
 from flask import Flask, render_template, request, redirect, url_for, session
 import sqlite3
+import psycopg2
+import psycopg2.extras
 import os
 import hashlib
 from reportlab.platypus.flowables import HRFlowable

@@ -376,35 +376,52 @@ def new_assessment():
         date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         try:
-            conn = sqlite3.connect(get_db_path())
-            cursor = conn.cursor()
+            conn = get_db_connection()
+            is_postgres = os.environ.get('DATABASE_URL') is not None
+            q = "%s" if is_postgres else "?"
+            
+            if is_postgres:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT INTO assessments
+                    (reference, organization, department, location, assessor, project, date_created)
+                    VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}) RETURNING id
+                """, (reference, organization, department, location,
+                      session.get("full_name", session.get("username")),
+                      project, date_now))
+                assessment_id = cursor.fetchone()[0]
+            else:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT INTO assessments
+                    (reference, organization, department, location, assessor, project, date_created)
+                    VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q})
+                """, (reference, organization, department, location,
+                      session.get("full_name", session.get("username")),
+                      project, date_now))
+                assessment_id = cursor.lastrowid
 
-            cursor.execute("""
-                INSERT INTO assessments
-                (reference, organization, department, location, assessor, project, date_created)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (reference, organization, department, location,
-                  session.get("full_name", session.get("username")),
-                  project, date_now))
-
-            assessment_id = cursor.lastrowid
-
-            cursor.execute("""
+            cursor.execute(f"""
                 INSERT INTO hazards
                 (assessment_id, category, name, severity, likelihood,
                  risk_score, risk_level, existing_controls, additional_controls,
                  residual_severity, residual_likelihood, residual_score,
                  residual_level, action)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
             """, (assessment_id, category, hazard_name, severity, likelihood,
                   risk_score, risk_level, existing_controls, additional_controls,
                   residual_severity, residual_likelihood, residual_score,
                   residual_level, action))
 
             conn.commit()
+            cursor.close()
             conn.close()
 
             return redirect(url_for("history"))
+
+        except Exception as e:
+            return render_template("new_assessment.html", active="new",
+                                   error=f"Save failed: {e}")
 
         except Exception as e:
             return render_template("new_assessment.html", active="new",
@@ -431,29 +448,37 @@ def calculate_risk_level(score):
 # ============================================
 # HISTORY
 # ============================================
-@app.route("/history")
-def history():
-    if "username" not in session:
-        return redirect(url_for("login"))
-
-    # Load assessments from DB
     assessments = []
     try:
-        conn = sqlite3.connect(get_db_path())
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute("""
-            SELECT a.id, a.reference, a.organization, a.project,
-                   a.date_created,
-                   COUNT(h.id) AS hazard_count
-            FROM assessments a
-            LEFT JOIN hazards h ON h.assessment_id = a.id
-            GROUP BY a.id
-            ORDER BY a.id DESC
-            LIMIT 50
-        """).fetchall()
-        assessments = [dict(r) for r in rows]
+        conn = get_db_connection()
+        if os.environ.get('DATABASE_URL'):
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("""
+                SELECT a.id, a.reference, a.organization, a.project,
+                       a.date_created,
+                       COUNT(h.id) AS hazard_count
+                FROM assessments a
+                LEFT JOIN hazards h ON h.assessment_id = a.id
+                GROUP BY a.id, a.reference, a.organization, a.project, a.date_created
+                ORDER BY a.id DESC
+                LIMIT 50
+            """)
+            assessments = cursor.fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT a.id, a.reference, a.organization, a.project,
+                       a.date_created,
+                       COUNT(h.id) AS hazard_count
+                FROM assessments a
+                LEFT JOIN hazards h ON h.assessment_id = a.id
+                GROUP BY a.id
+                ORDER BY a.id DESC
+                LIMIT 50
+            """).fetchall()
+            assessments = [dict(r) for r in rows]
         conn.close()
     except Exception as e:
+        print("History error:", e)
         assessments = []
 
     return render_template("history.html", active="history", assessments=assessments)

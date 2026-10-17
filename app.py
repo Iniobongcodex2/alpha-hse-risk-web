@@ -1,6 +1,5 @@
 # ============================================
 # ALPHA HSE RISK — WEB APP
-# Stage 15.3 — Mobile Login
 # ============================================
 from flask import Flask, render_template, request, redirect, url_for, session
 import sqlite3
@@ -8,175 +7,132 @@ import psycopg2
 import psycopg2.extras
 import os
 import hashlib
+import datetime
 from reportlab.platypus.flowables import HRFlowable
 
 app = Flask(__name__)
-app.secret_key = "change-this-secret-key-later-2026"   # for session security
-
+app.secret_key = "change-this-secret-key-later-2026"
 
 # ============================================
-# DATABASE PATH — SAME AS DESKTOP
+# DATABASE CONNECTION (Postgres in cloud, SQLite local)
 # ============================================
-def get_db_path():
-    """Returns the SQLite database path.
-    Works on both local (Windows) and Render (Linux)."""
-    # Check if running on Render (they set RENDER env var)
-    if os.environ.get("RENDER"):
-        data_folder = "/opt/render/project/src/data"
+def get_db_connection():
+    """Returns a database connection. Uses PostgreSQL if DATABASE_URL is set, else SQLite."""
+    db_url = os.environ.get('DATABASE_URL')
+    
+    if db_url:
+        # PostgreSQL (Cloud)
+        conn = psycopg2.connect(db_url)
+        conn.autocommit = True
+        return conn
     else:
+        # SQLite (Local)
         data_folder = os.path.expanduser("~/Documents/ALPHA_HSE_DATA")
+        if not os.path.exists(data_folder):
+            os.makedirs(data_folder, exist_ok=True)
+        db_path = os.path.join(data_folder, "alpha_hse_risk.db")
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
 
-    if not os.path.exists(data_folder):
-        os.makedirs(data_folder, exist_ok=True)
-
-    return os.path.join(data_folder, "alpha_hse_risk.db")
-
-# ============================================
-# DATABASE SETUP — auto-create tables + seed admin
-# Safe to run on every startup.
-# ============================================
 def setup_database():
     """Creates tables if they don't exist, and seeds the admin user."""
-    conn = sqlite3.connect(get_db_path())
+    conn = get_db_connection()
     cursor = conn.cursor()
 
-    # --- users table ---
-    cursor.execute("""
+    is_postgres = os.environ.get('DATABASE_URL') is not None
+    id_type = "SERIAL PRIMARY KEY" if is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS users (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            username          TEXT    NOT NULL UNIQUE,
-            full_name         TEXT,
-            email             TEXT,
-            role_id           INTEGER,
-            organization_name TEXT,
-            is_active         INTEGER NOT NULL DEFAULT 1,
-            password_hash     TEXT,
-            created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+            id {id_type}, username TEXT NOT NULL UNIQUE, full_name TEXT,
+            email TEXT, role_id INTEGER, organization_name TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1, password_hash TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
-    # --- roles table ---
-    cursor.execute("""
+    cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS roles (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT NOT NULL UNIQUE,
-            description TEXT
+            id {id_type}, name TEXT NOT NULL UNIQUE, description TEXT
+        )
+    """)
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS assessments (
+            id {id_type}, reference TEXT UNIQUE, organization TEXT,
+            department TEXT, location TEXT, assessor TEXT,
+            project TEXT, date_created TEXT
+        )
+    """)
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS hazards (
+            id {id_type}, assessment_id INTEGER, category TEXT, name TEXT,
+            severity INTEGER, likelihood INTEGER, risk_score INTEGER,
+            risk_level TEXT, existing_controls TEXT, additional_controls TEXT,
+            residual_severity INTEGER, residual_likelihood INTEGER,
+            residual_score INTEGER, residual_level TEXT, action TEXT
+        )
+    """)
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id {id_type}, timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+            username TEXT, action TEXT, target_type TEXT,
+            target_id TEXT, details TEXT
         )
     """)
 
-    # --- Seed roles ---
     roles = [
         ("HSE Officer", "Creates and edits assessments"),
         ("HSE Supervisor", "Reviews team assessments"),
         ("HSE Manager", "Org-wide oversight and analytics"),
         ("Administrator", "Manages users, orgs and system"),
     ]
+    
     for role_name, description in roles:
-        cursor.execute(
-            "INSERT OR IGNORE INTO roles (name, description) VALUES (?, ?)",
-            (role_name, description)
-        )
+        if is_postgres:
+            cursor.execute("INSERT INTO roles (name, description) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING", (role_name, description))
+        else:
+            cursor.execute("INSERT OR IGNORE INTO roles (name, description) VALUES (?, ?)", (role_name, description))
 
-    # --- assessments table ---
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS assessments (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            reference     TEXT UNIQUE,
-            organization  TEXT,
-            department    TEXT,
-            location      TEXT,
-            assessor      TEXT,
-            project       TEXT,
-            date_created  TEXT
-        )
-    """)
-
-    # --- hazards table ---
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS hazards (
-            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-            assessment_id        INTEGER,
-            category             TEXT,
-            name                 TEXT,
-            severity             INTEGER,
-            likelihood           INTEGER,
-            risk_score           INTEGER,
-            risk_level           TEXT,
-            existing_controls    TEXT,
-            additional_controls  TEXT,
-            residual_severity    INTEGER,
-            residual_likelihood  INTEGER,
-            residual_score       INTEGER,
-            residual_level       TEXT,
-            action               TEXT
-        )
-    """)
-
-    # --- audit_log table ---
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS audit_log (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp   TEXT DEFAULT CURRENT_TIMESTAMP,
-            username    TEXT,
-            action      TEXT,
-            target_type TEXT,
-            target_id   TEXT,
-            details     TEXT
-        )
-    """)
-
-    conn.commit()
-
-    # --- Seed admin user if none exists ---
-    row = cursor.execute("SELECT COUNT(*) FROM users").fetchone()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    row = cursor.fetchone()
+    
     if row[0] == 0:
-        # Get the Administrator role id
-        r = cursor.execute(
-            "SELECT id FROM roles WHERE name = ?",
-            ("Administrator",)
-        ).fetchone()
+        if is_postgres:
+            cursor.execute("SELECT id FROM roles WHERE name = %s", ("Administrator",))
+        else:
+            cursor.execute("SELECT id FROM roles WHERE name = ?", ("Administrator",))
+            
+        r = cursor.fetchone()
         admin_role_id = r[0] if r else None
 
-        # Hash the password
-        import hashlib
         password = "Prosper123#"
         iterations = 29000
         salt = os.urandom(16)
-        pwd_bytes = password.encode("utf-8")
-        dk = hashlib.pbkdf2_hmac("sha256", pwd_bytes, salt, iterations)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
         password_hash = f"pbkdf2_sha256${iterations}${salt.hex()}${dk.hex()}"
 
-        cursor.execute("""
-            INSERT INTO users
-                (username, full_name, email, role_id, organization_name,
-                 is_active, password_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "God'stime", "Iniobong Eyibio", "godstimeisthebest55@gmail.com",
-            admin_role_id, "Shell oil", 1, password_hash
-        ))
-        conn.commit()
-        print(">>> Seeded admin user: God'stime")
+        if is_postgres:
+            cursor.execute("""
+                INSERT INTO users (username, full_name, email, role_id, organization_name, is_active, password_hash)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, ("God'stime", "Iniobong Eyibio", "godstimeisthebest55@gmail.com", admin_role_id, "Shell oil", 1, password_hash))
+        else:
+            cursor.execute("""
+                INSERT INTO users (username, full_name, email, role_id, organization_name, is_active, password_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, ("God'stime", "Iniobong Eyibio", "godstimeisthebest55@gmail.com", admin_role_id, "Shell oil", 1, password_hash))
 
+    conn.commit()
+    cursor.close()
     conn.close()
-    print(">>> Database ready at:", get_db_path())
 
-
-# ============================================
-# RUN SETUP ON FIRST REQUEST
-# ============================================
 @app.before_request
 def _ensure_db_once():
-    """Runs setup_database() once before handling the first request."""
     if not getattr(app, "_db_ready", False):
         setup_database()
         app._db_ready = True
 
-# ============================================
-# PASSWORD VERIFICATION — SAME AS DESKTOP
-# ============================================
 def verify_password(password, stored_hash):
-    """Checks if a plain-text password matches a stored PBKDF2 hash."""
     if not password or not stored_hash:
         return False
     try:
@@ -192,9 +148,18 @@ def verify_password(password, stored_hash):
     except:
         return False
 
+def calculate_risk_level(score):
+    if score >= 16:
+        return "Critical"
+    elif score >= 10:
+        return "High"
+    elif score >= 5:
+        return "Medium"
+    else:
+        return "Low"
 
 # ============================================
-# HOME — redirect to login or dashboard
+# ROUTES
 # ============================================
 @app.route("/")
 def home():
@@ -202,10 +167,6 @@ def home():
         return redirect(url_for("dashboard"))
     return redirect(url_for("login"))
 
-
-# ============================================
-# LOGIN
-# ============================================
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
@@ -218,13 +179,19 @@ def login():
             error = "Please enter username and password."
         else:
             try:
-                conn = sqlite3.connect(get_db_path())
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT username, full_name, role_id, is_active, password_hash "
-                    "FROM users WHERE username = ?",
-                    (username,)
-                ).fetchone()
+                conn = get_db_connection()
+                if os.environ.get('DATABASE_URL'):
+                    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                    cursor.execute(
+                        "SELECT username, full_name, role_id, is_active, password_hash "
+                        "FROM users WHERE username = %s", (username,)
+                    )
+                    row = cursor.fetchone()
+                else:
+                    row = conn.execute(
+                        "SELECT username, full_name, role_id, is_active, password_hash "
+                        "FROM users WHERE username = ?", (username,)
+                    ).fetchone()
                 conn.close()
 
                 if row is None:
@@ -236,7 +203,6 @@ def login():
                 elif not verify_password(password, row["password_hash"]):
                     error = "Invalid username or password."
                 else:
-                    # SUCCESS — store in session
                     session["username"] = row["username"]
                     session["full_name"] = row["full_name"] or row["username"]
                     session["role_id"] = row["role_id"]
@@ -247,19 +213,11 @@ def login():
 
     return render_template("login.html", error=error, active=None)
 
-
-# ============================================
-# LOGOUT
-# ============================================
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
-
-# ============================================
-# DASHBOARD
-# ============================================
 @app.route("/dashboard")
 def dashboard():
     if "username" not in session:
@@ -273,36 +231,26 @@ def dashboard():
     }
 
     try:
-        conn = sqlite3.connect(get_db_path())
-        conn.row_factory = sqlite3.Row
-
-        # Total assessments
-        stats["total_assessments"] = conn.execute(
-            "SELECT COUNT(*) AS c FROM assessments"
-        ).fetchone()["c"]
-
-        # Total hazards
-        stats["total_hazards"] = conn.execute(
-            "SELECT COUNT(*) AS c FROM hazards"
-        ).fetchone()["c"]
-
-        # High + Critical risks
-        stats["high_critical"] = conn.execute(
-            "SELECT COUNT(*) AS c FROM hazards WHERE residual_level IN ('High', 'Critical')"
-        ).fetchone()["c"]
-
-        # Recent 3 assessments
-        rows = conn.execute("""
-            SELECT reference, organization, project, date_created
-            FROM assessments
-            ORDER BY id DESC
-            LIMIT 3
-        """).fetchall()
-        stats["recent"] = [dict(r) for r in rows]
-
+        conn = get_db_connection()
+        if os.environ.get('DATABASE_URL'):
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT COUNT(*) AS c FROM assessments")
+            stats["total_assessments"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) AS c FROM hazards")
+            stats["total_hazards"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) AS c FROM hazards WHERE residual_level IN ('High', 'Critical')")
+            stats["high_critical"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT reference, organization, project, date_created FROM assessments ORDER BY id DESC LIMIT 3")
+            stats["recent"] = cursor.fetchall()
+        else:
+            stats["total_assessments"] = conn.execute("SELECT COUNT(*) AS c FROM assessments").fetchone()["c"]
+            stats["total_hazards"] = conn.execute("SELECT COUNT(*) AS c FROM hazards").fetchone()["c"]
+            stats["high_critical"] = conn.execute("SELECT COUNT(*) AS c FROM hazards WHERE residual_level IN ('High', 'Critical')").fetchone()["c"]
+            rows = conn.execute("SELECT reference, organization, project, date_created FROM assessments ORDER BY id DESC LIMIT 3").fetchall()
+            stats["recent"] = [dict(r) for r in rows]
         conn.close()
     except Exception as e:
-        pass
+        print("Dashboard DB error:", e)
 
     return render_template(
         "dashboard.html",
@@ -312,19 +260,12 @@ def dashboard():
         stats=stats
     )
 
-# ============================================
-# NEW ASSESSMENT
-# ============================================
-# ============================================
-# NEW ASSESSMENT
-# ============================================
 @app.route("/new", methods=["GET", "POST"])
 def new_assessment():
     if "username" not in session:
         return redirect(url_for("login"))
 
     if request.method == "POST":
-        # Read form data
         organization = request.form.get("organization", "").strip()
         department = request.form.get("department", "").strip()
         location = request.form.get("location", "").strip()
@@ -342,20 +283,13 @@ def new_assessment():
         except:
             severity = likelihood = residual_severity = residual_likelihood = 0
 
-        # Validate
         if not organization or not hazard_name:
-            return render_template("new_assessment.html", active="new",
-                                   error="Organization and Hazard Name are required.")
-
+            return render_template("new_assessment.html", active="new", error="Organization and Hazard Name are required.")
         if not (1 <= severity <= 5) or not (1 <= likelihood <= 5):
-            return render_template("new_assessment.html", active="new",
-                                   error="Severity and Likelihood must be 1-5.")
-
+            return render_template("new_assessment.html", active="new", error="Severity and Likelihood must be 1-5.")
         if not (1 <= residual_severity <= 5) or not (1 <= residual_likelihood <= 5):
-            return render_template("new_assessment.html", active="new",
-                                   error="Residual values must be 1-5.")
+            return render_template("new_assessment.html", active="new", error="Residual values must be 1-5.")
 
-        # Calculate risk
         risk_score = severity * likelihood
         risk_level = calculate_risk_level(risk_score)
         residual_score = residual_severity * residual_likelihood
@@ -370,8 +304,6 @@ def new_assessment():
         else:
             action = "Monitor - No immediate action required"
 
-        # Generate reference
-        import datetime
         reference = "HSE-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -386,9 +318,7 @@ def new_assessment():
                     INSERT INTO assessments
                     (reference, organization, department, location, assessor, project, date_created)
                     VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}) RETURNING id
-                """, (reference, organization, department, location,
-                      session.get("full_name", session.get("username")),
-                      project, date_now))
+                """, (reference, organization, department, location, session.get("full_name", session.get("username")), project, date_now))
                 assessment_id = cursor.fetchone()[0]
             else:
                 cursor = conn.cursor()
@@ -396,9 +326,7 @@ def new_assessment():
                     INSERT INTO assessments
                     (reference, organization, department, location, assessor, project, date_created)
                     VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q})
-                """, (reference, organization, department, location,
-                      session.get("full_name", session.get("username")),
-                      project, date_now))
+                """, (reference, organization, department, location, session.get("full_name", session.get("username")), project, date_now))
                 assessment_id = cursor.lastrowid
 
             cursor.execute(f"""
@@ -420,34 +348,18 @@ def new_assessment():
             return redirect(url_for("history"))
 
         except Exception as e:
-            return render_template("new_assessment.html", active="new",
-                                   error=f"Save failed: {e}")
-
-        except Exception as e:
-            return render_template("new_assessment.html", active="new",
-                                   error=f"Save failed: {e}")
+            return render_template("new_assessment.html", active="new", error=f"Save failed: {e}")
 
     return render_template("new_assessment.html", active="new")
 
+# ============================================
+# HISTORY (FIXED)
+# ============================================
+@app.route("/history")
+def history():
+    if "username" not in session:
+        return redirect(url_for("login"))
 
-# ============================================
-# RISK LEVEL CALCULATOR (same as desktop)
-# ============================================
-def calculate_risk_level(score):
-    """Returns the risk level based on score."""
-    if score >= 16:
-        return "Critical"
-    elif score >= 10:
-        return "High"
-    elif score >= 5:
-        return "Medium"
-    else:
-        return "Low"
-
-
-# ============================================
-# HISTORY
-# ============================================
     assessments = []
     try:
         conn = get_db_connection()
@@ -483,10 +395,6 @@ def calculate_risk_level(score):
 
     return render_template("history.html", active="history", assessments=assessments)
 
-
-# ============================================
-# ASSESSMENT DETAIL
-# ============================================
 @app.route("/assessment/<int:assessment_id>")
 def assessment_detail(assessment_id):
     if "username" not in session:
@@ -496,7 +404,6 @@ def assessment_detail(assessment_id):
         with sqlite3.connect(get_db_path()) as conn:
             conn.row_factory = sqlite3.Row
 
-            # Load the assessment
             a_row = conn.execute(
                 "SELECT * FROM assessments WHERE id = ?",
                 (assessment_id,)
@@ -507,14 +414,8 @@ def assessment_detail(assessment_id):
 
             assessment = dict(a_row)
 
-            # Load hazards linked to this assessment
             h_rows = conn.execute(
-                """
-                SELECT *
-                FROM hazards
-                WHERE assessment_id = ?
-                ORDER BY id
-                """,
+                "SELECT * FROM hazards WHERE assessment_id = ? ORDER BY id",
                 (assessment_id,)
             ).fetchall()
 
@@ -534,9 +435,7 @@ def assessment_detail(assessment_id):
     except Exception:
         app.logger.exception("Unexpected error loading assessment %s", assessment_id)
         return "An unexpected error occurred while loading the assessment.", 500
-# ============================================
-# PDF DOWNLOAD
-# ============================================
+
 @app.route("/assessment/<int:assessment_id>/pdf")
 def assessment_pdf(assessment_id):
     if "username" not in session:
@@ -573,7 +472,6 @@ def assessment_pdf(assessment_id):
         hazards = [dict(r) for r in h_rows]
         conn.close()
 
-        # --- Build the PDF ---
         buffer = BytesIO()
         doc = SimpleDocTemplate(
             buffer, pagesize=A4,
@@ -600,7 +498,6 @@ def assessment_pdf(assessment_id):
 
         elements = []
 
-        # Header
         elements.append(Paragraph("ALPHA HSE RISK ASSESSMENT", title_style))
         elements.append(Paragraph(
             "Professional Risk Management System",
@@ -608,7 +505,6 @@ def assessment_pdf(assessment_id):
         ))
         elements.append(Spacer(1, 12))
 
-        # Assessment details table
         header_data = [
             ["Reference:", assessment.get("reference") or "—"],
             ["Organization:", assessment.get("organization") or "—"],
@@ -631,14 +527,12 @@ def assessment_pdf(assessment_id):
         elements.append(header_table)
         elements.append(Spacer(1, 16))
 
-                # Hazards
         for i, h in enumerate(hazards, 1):
             elements.append(Paragraph(
                 f"HAZARD {i}: {h.get('category') or '—'}",
                 section_style
             ))
 
-            # ---- PART 1: Hazard + Initial Risk + Controls ----
             hazard_part1 = [
                 ["Hazard Name:", h.get("name") or "—"],
                 ["Severity:", str(h.get("severity") or "—")],
@@ -656,14 +550,12 @@ def assessment_pdf(assessment_id):
             ]))
             elements.append(t1)
 
-            # ---- SEPARATOR LINE ----
             elements.append(Spacer(1, 4))
             elements.append(HRFlowable(
                 width="100%", thickness=0.5,
                 color=gold, spaceBefore=2, spaceAfter=6
             ))
 
-            # ---- PART 2: Residual Risk + Action ----
             hazard_part2 = [
                 ["Residual Severity:", str(h.get("residual_severity") or "—")],
                 ["Residual Likelihood:", str(h.get("residual_likelihood") or "—")],
@@ -680,9 +572,6 @@ def assessment_pdf(assessment_id):
             elements.append(t2)
             elements.append(Spacer(1, 14))
 
-        
-
-               # Footer
         elements.append(Spacer(1, 16))
         elements.append(HRFlowable(
             width="100%", thickness=0.5,
@@ -708,10 +597,6 @@ def assessment_pdf(assessment_id):
     except Exception as e:
         return f"PDF generation failed: {e}"
 
-
-# ============================================
-# PROFILE
-# ============================================
 @app.route("/profile")
 def profile():
     if "username" not in session:
@@ -723,12 +608,8 @@ def profile():
         full_name=session.get("full_name")
     )
 
-# ============================================
-# SERVICE WORKER ROUTE
-# ============================================
 @app.route('/sw.js')
 def service_worker():
-    """Serve the Service Worker from the root URL."""
     from flask import make_response
     response = make_response(app.send_static_file('sw.js'))
     response.headers['Content-Type'] = 'application/javascript'

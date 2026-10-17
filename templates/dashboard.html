@@ -42,8 +42,42 @@
 </div>
 {% endif %}
 
+<div id="pending-card" class="card"
+     style="display:none; background:#FEF3C7; border-left:4px solid #C9A961; margin-bottom:12px;">
+    <p style="font-size:12px; color:#92400E; margin-bottom:4px;">Pending Sync</p>
+    <p style="font-size:26px; color:#92400E; font-weight:bold;" id="pending-count">0</p>
+    <p style="font-size:11px; color:#92400E; margin-top:4px;">
+        Saved on this phone — will upload when online
+    </p>
+</div>
+
 <a href="/new" class="btn-primary btn-gold" style="display:block;">
     ➕ Start New Assessment
 </a>
+
+<script>
+    // ---- Show pending count on dashboard ----
+    function updatePendingCount() {
+        let queue = [];
+        try {
+            queue = JSON.parse(localStorage.getItem('alpha_pending_assessments') || '[]');
+        } catch (e) {
+            queue = [];
+        }
+
+        const card = document.getElementById('pending-card');
+        const countEl = document.getElementById('pending-count');
+
+        if (queue.length > 0) {
+            countEl.textContent = queue.length;
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    }
+
+    // Run on page load
+    document.addEventListener('DOMContentLoaded', updatePendingCount);
+</script>
 
 {% endblock %}

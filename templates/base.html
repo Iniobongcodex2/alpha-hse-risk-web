@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#0F1E3D">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="ALPHA HSE">
     <link rel="manifest" href="/static/manifest.json">
@@ -156,8 +157,9 @@
             <span>Profile</span>
         </a>
     </nav>
-        <script>
-        // Register the Service Worker for offline caching
+
+    <!-- 1. Register Service Worker -->
+    <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js')
@@ -165,6 +167,74 @@
                     .catch(err => console.log('SW registration failed:', err));
             });
         }
+    </script>
+
+    <!-- 2. Auto-sync pending assessments -->
+    <script>
+        async function syncPendingAssessments() {
+            if (!navigator.onLine) return;
+
+            let queue = [];
+            try {
+                queue = JSON.parse(localStorage.getItem('alpha_pending_assessments') || '[]');
+            } catch (e) {
+                return;
+            }
+
+            if (queue.length === 0) return;
+
+            console.log(`Starting sync of ${queue.length} pending assessments...`);
+            let remaining = [];
+            let syncedCount = 0;
+
+            for (let item of queue) {
+                try {
+                    let formData = new FormData();
+                    for (let key in item) {
+                        if (key !== 'saved_at') {
+                            formData.append(key, item[key]);
+                        }
+                    }
+
+                    let response = await fetch('/new', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok || response.redirected) {
+                        syncedCount++;
+                    } else {
+                        remaining.push(item);
+                    }
+                } catch (err) {
+                    console.error('Sync failed for item:', err);
+                    remaining.push(item);
+                }
+            }
+
+            localStorage.setItem('alpha_pending_assessments', JSON.stringify(remaining));
+
+            if (syncedCount > 0) {
+                console.log(`Successfully synced ${syncedCount} assessments.`);
+                if (window.location.pathname === '/dashboard') {
+                    location.reload();
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', syncPendingAssessments);
+
+        window.addEventListener('online', () => {
+            console.log('Connection restored! Attempting sync...');
+            syncPendingAssessments();
+        });
+
+        // 3. Fallback: try syncing every 10 seconds if there are pending items
+        setInterval(() => {
+            if (navigator.onLine) {
+                syncPendingAssessments();
+            }
+        }, 10000);
     </script>
 
 </body>

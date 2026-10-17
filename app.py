@@ -401,46 +401,38 @@ def assessment_detail(assessment_id):
         return redirect(url_for("login"))
 
     try:
-        with sqlite3.connect(get_db_path()) as conn:
-            conn.row_factory = sqlite3.Row
-
-            a_row = conn.execute(
-                "SELECT * FROM assessments WHERE id = ?",
-                (assessment_id,)
-            ).fetchone()
+        conn = get_db_connection()
+        if os.environ.get('DATABASE_URL'):
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT * FROM assessments WHERE id = %s", (assessment_id,))
+            a_row = cursor.fetchone()
 
             if a_row is None:
+                conn.close()
                 return redirect(url_for("history"))
-
             assessment = dict(a_row)
 
-            h_rows = conn.execute(
-                "SELECT * FROM hazards WHERE assessment_id = ? ORDER BY id",
-                (assessment_id,)
-            ).fetchall()
+            cursor.execute("SELECT * FROM hazards WHERE assessment_id = %s ORDER BY id", (assessment_id,))
+            hazards = cursor.fetchall()
+        else:
+            conn.row_factory = sqlite3.Row
+            a_row = conn.execute("SELECT * FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
 
-            hazards = [dict(row) for row in h_rows]
+            if a_row is None:
+                conn.close()
+                return redirect(url_for("history"))
+            assessment = dict(a_row)
 
-        return render_template(
-            "assessment_detail.html",
-            active="history",
-            assessment=assessment,
-            hazards=hazards
-        )
+            h_rows = conn.execute("SELECT * FROM hazards WHERE assessment_id = ? ORDER BY id", (assessment_id,)).fetchall()
+            hazards = [dict(r) for r in h_rows]
 
-    except sqlite3.Error:
-        app.logger.exception("Database error loading assessment %s", assessment_id)
-        return "A database error occurred while loading the assessment.", 500
+        conn.close()
+        return render_template("assessment_detail.html", active="history", assessment=assessment, hazards=hazards)
 
-    except Exception:
-        app.logger.exception("Unexpected error loading assessment %s", assessment_id)
-        return "An unexpected error occurred while loading the assessment.", 500
-
-@app.route("/assessment/<int:assessment_id>/pdf")
-def assessment_pdf(assessment_id):
-    if "username" not in session:
-        return redirect(url_for("login"))
-
+    except Exception as e:
+        print("Detail page error:", e)
+        return f"Error loading assessment: {e}", 500
+    
     from io import BytesIO
     from flask import send_file
     from reportlab.lib.pagesizes import A4
@@ -450,24 +442,14 @@ def assessment_pdf(assessment_id):
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
     try:
-        conn = sqlite3.connect(get_db_path())
-        conn.row_factory = sqlite3.Row
-
-        a_row = conn.execute(
-            "SELECT * FROM assessments WHERE id = ?",
-            (assessment_id,)
-        ).fetchone()
-
-        if a_row is None:
-            conn.close()
-            return redirect(url_for("history"))
-
-        assessment = dict(a_row)
-
-        h_rows = conn.execute(
-            "SELECT * FROM hazards WHERE assessment_id = ? ORDER BY id",
-            (assessment_id,)
-        ).fetchall()
+        conn = get_db_connection()
+        if os.environ.get('DATABASE_URL'):
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT * FROM assessments WHERE id = %s", (assessment_id,))
+            a_row = cursor.fetchone()
+        else:
+            conn.row_factory = sqlite3.Row
+            a_row = conn.execute("SELECT * FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
 
         hazards = [dict(r) for r in h_rows]
         conn.close()

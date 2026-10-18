@@ -501,13 +501,14 @@ def assessment_pdf(assessment_id):
         )
 
         styles = getSampleStyleSheet()
-        navy = colors.HexColor("#0F1E3D")
-        gold = colors.HexColor("#C9A961")
+        # === BRAND COLORS RESTORED HERE ===
+        navy = colors.HexColor("#0A1E3D") 
+        gold = colors.HexColor("#C9A84C") 
         light_gray = colors.HexColor("#F4F6F9")
 
         title_style = ParagraphStyle(
             "AlphaTitle", parent=styles["Heading1"],
-            textColor=navy, fontSize=16, leading=20, spaceAfter=5,
+            textColor=gold, fontSize=16, leading=20, spaceAfter=5,
         )
         subtitle_style = ParagraphStyle(
             "AlphaSubtitle", parent=styles["Normal"],
@@ -545,10 +546,12 @@ def assessment_pdf(assessment_id):
                 ("TOPPADDING", (0, 0), (-1, -1), 5),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
             ]
+
             if label_column:
                 commands.extend([
-                    ("BACKGROUND", (0, 0), (0, -1), light_gray),
-                    ("TEXTCOLOR", (0, 0), (0, -1), navy),
+                    ("BACKGROUND", (0, 0), (0, -1), navy),
+                    ("TEXTCOLOR", (0, 0), (0, -1), gold),
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
                 ])
             table.setStyle(TableStyle(commands))
             return table

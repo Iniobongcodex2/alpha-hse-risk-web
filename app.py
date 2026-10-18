@@ -8,7 +8,6 @@ import psycopg2.extras
 import os
 import hashlib
 import datetime
-from reportlab.platypus.flowables import HRFlowable
 
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key-later-2026"
@@ -34,6 +33,34 @@ def get_db_connection():
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+def verify_password(password, stored_hash):
+    """Checks if a plain-text password matches a stored PBKDF2 hash."""
+    if not password or not stored_hash:
+        return False
+    try:
+        parts = stored_hash.split("$")
+        if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
+            return False
+        iterations = int(parts[1])
+        salt = bytes.fromhex(parts[2])
+        expected = parts[3]
+        pwd_bytes = password.encode("utf-8")
+        dk = hashlib.pbkdf2_hmac("sha256", pwd_bytes, salt, iterations)
+        return dk.hex() == expected
+    except:
+        return False
+
+def calculate_risk_level(score):
+    """Returns the risk level based on score."""
+    if score >= 16:
+        return "Critical"
+    elif score >= 10:
+        return "High"
+    elif score >= 5:
+        return "Medium"
+    else:
+        return "Low"
 
 def setup_database():
     """Creates tables if they don't exist, and seeds the admin user."""
@@ -126,37 +153,14 @@ def setup_database():
     cursor.close()
     conn.close()
 
+# ============================================
+# RUN SETUP ON FIRST REQUEST
+# ============================================
 @app.before_request
 def _ensure_db_once():
     if not getattr(app, "_db_ready", False):
         setup_database()
         app._db_ready = True
-
-def verify_password(password, stored_hash):
-    if not password or not stored_hash:
-        return False
-    try:
-        parts = stored_hash.split("$")
-        if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
-            return False
-        iterations = int(parts[1])
-        salt = bytes.fromhex(parts[2])
-        expected = parts[3]
-        pwd_bytes = password.encode("utf-8")
-        dk = hashlib.pbkdf2_hmac("sha256", pwd_bytes, salt, iterations)
-        return dk.hex() == expected
-    except:
-        return False
-
-def calculate_risk_level(score):
-    if score >= 16:
-        return "Critical"
-    elif score >= 10:
-        return "High"
-    elif score >= 5:
-        return "Medium"
-    else:
-        return "Low"
 
 # ============================================
 # ROUTES
@@ -352,9 +356,6 @@ def new_assessment():
 
     return render_template("new_assessment.html", active="new")
 
-# ============================================
-# HISTORY (FIXED)
-# ============================================
 @app.route("/history")
 def history():
     if "username" not in session:
@@ -432,152 +433,190 @@ def assessment_detail(assessment_id):
     except Exception as e:
         print("Detail page error:", e)
         return f"Error loading assessment: {e}", 500
-    
+
+@app.route("/assessment/<int:assessment_id>/pdf")
+def assessment_pdf(assessment_id):
+    """Generate and download a PDF copy of one saved risk assessment."""
+    if "username" not in session:
+        return redirect(url_for("login"))
+
     from io import BytesIO
+    from html import escape
     from flask import send_file
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, HRFlowable
+    )
 
+    conn = None
     try:
         conn = get_db_connection()
-        if os.environ.get('DATABASE_URL'):
+        is_postgres = bool(os.environ.get("DATABASE_URL"))
+
+        if is_postgres:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute("SELECT * FROM assessments WHERE id = %s", (assessment_id,))
-            a_row = cursor.fetchone()
+            assessment_row = cursor.fetchone()
+            if assessment_row is None:
+                return redirect(url_for("history"))
+            assessment = dict(assessment_row)
+            cursor.execute(
+                "SELECT * FROM hazards WHERE assessment_id = %s ORDER BY id",
+                (assessment_id,),
+            )
+            hazards = [dict(row) for row in cursor.fetchall()]
+            cursor.close()
         else:
-            conn.row_factory = sqlite3.Row
-            a_row = conn.execute("SELECT * FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
+            assessment_row = conn.execute(
+                "SELECT * FROM assessments WHERE id = ?", (assessment_id,)
+            ).fetchone()
+            if assessment_row is None:
+                return redirect(url_for("history"))
+            assessment = dict(assessment_row)
+            hazard_rows = conn.execute(
+                "SELECT * FROM hazards WHERE assessment_id = ? ORDER BY id",
+                (assessment_id,),
+            ).fetchall()
+            hazards = [dict(row) for row in hazard_rows]
 
-        hazards = [dict(r) for r in h_rows]
-        conn.close()
+        def safe_text(value, fallback="—"):
+            if value is None or str(value).strip() == "":
+                return fallback
+            return escape(str(value))
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(
-            buffer, pagesize=A4,
-            rightMargin=30, leftMargin=30,
-            topMargin=30, bottomMargin=30
+            buffer,
+            pagesize=A4,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=30,
+            bottomMargin=30,
+            title=f"Risk Assessment {assessment.get('reference') or assessment_id}",
+            author="ALPHA HSE RISK",
         )
 
         styles = getSampleStyleSheet()
         navy = colors.HexColor("#0F1E3D")
         gold = colors.HexColor("#C9A961")
+        light_gray = colors.HexColor("#F4F6F9")
 
         title_style = ParagraphStyle(
-            "title", parent=styles["Heading1"],
-            textColor=gold, fontSize=16, spaceAfter=6
+            "AlphaTitle", parent=styles["Heading1"],
+            textColor=navy, fontSize=16, leading=20, spaceAfter=5,
+        )
+        subtitle_style = ParagraphStyle(
+            "AlphaSubtitle", parent=styles["Normal"],
+            fontSize=9, textColor=colors.grey, spaceAfter=12,
         )
         section_style = ParagraphStyle(
-            "section", parent=styles["Heading2"],
-            textColor=navy, fontSize=12, spaceAfter=4
+            "AlphaSection", parent=styles["Heading2"],
+            textColor=navy, fontSize=11, leading=14, spaceAfter=5,
         )
-        body_style = ParagraphStyle(
-            "body", parent=styles["Normal"],
-            fontSize=10, leading=13
+        cell_style = ParagraphStyle(
+            "AlphaCell", parent=styles["Normal"], fontSize=8.5, leading=11,
+            wordWrap="CJK",
+        )
+        label_style = ParagraphStyle(
+            "AlphaLabel", parent=cell_style, fontName="Helvetica-Bold",
+        )
+        footer_style = ParagraphStyle(
+            "AlphaFooter", parent=styles["Normal"],
+            fontSize=9, textColor=gold, alignment=TA_CENTER,
         )
 
-        elements = []
+        def make_table(rows, col_widths, label_column=True):
+            formatted = []
+            for row in rows:
+                formatted.append([
+                    Paragraph(safe_text(value), label_style if label_column and index == 0 else cell_style)
+                    for index, value in enumerate(row)
+                ])
+            table = Table(formatted, colWidths=col_widths, repeatRows=0, hAlign="LEFT")
+            commands = [
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#CBD2D9")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+            if label_column:
+                commands.extend([
+                    ("BACKGROUND", (0, 0), (0, -1), light_gray),
+                    ("TEXTCOLOR", (0, 0), (0, -1), navy),
+                ])
+            table.setStyle(TableStyle(commands))
+            return table
 
-        elements.append(Paragraph("ALPHA HSE RISK ASSESSMENT", title_style))
-        elements.append(Paragraph(
-            "Professional Risk Management System",
-            ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=colors.grey)
-        ))
-        elements.append(Spacer(1, 12))
+        elements = [
+            Paragraph("ALPHA HSE RISK ASSESSMENT", title_style),
+            Paragraph("Professional Risk Management System", subtitle_style),
+        ]
 
         header_data = [
-            ["Reference:", assessment.get("reference") or "—"],
-            ["Organization:", assessment.get("organization") or "—"],
-            ["Department:", assessment.get("department") or "—"],
-            ["Location / Site:", assessment.get("location") or "—"],
-            ["Assessor:", assessment.get("assessor") or "—"],
-            ["Project:", assessment.get("project") or "—"],
-            ["Date:", assessment.get("date_created") or "—"],
+            ["Reference:", assessment.get("reference")],
+            ["Organization:", assessment.get("organization")],
+            ["Department:", assessment.get("department")],
+            ["Location / Site:", assessment.get("location")],
+            ["Assessor:", assessment.get("assessor")],
+            ["Project:", assessment.get("project")],
+            ["Date:", assessment.get("date_created")],
         ]
-        header_table = Table(header_data, colWidths=[1.5*inch, 5*inch])
-        header_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), navy),
-            ('TEXTCOLOR', (0, 0), (0, -1), gold),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ]))
-        elements.append(header_table)
-        elements.append(Spacer(1, 16))
+        elements.append(make_table(header_data, [1.45 * inch, 5.25 * inch]))
+        elements.append(Spacer(1, 14))
 
-        for i, h in enumerate(hazards, 1):
-            elements.append(Paragraph(
-                f"HAZARD {i}: {h.get('category') or '—'}",
-                section_style
-            ))
+        if not hazards:
+            elements.append(Paragraph("No hazards are recorded for this assessment.", cell_style))
 
-            hazard_part1 = [
-                ["Hazard Name:", h.get("name") or "—"],
-                ["Severity:", str(h.get("severity") or "—")],
-                ["Likelihood:", str(h.get("likelihood") or "—")],
-                ["Initial Risk Score:", f"{h.get('risk_score') or 0} ({h.get('risk_level') or '—'})"],
-                ["Existing Controls:", h.get("existing_controls") or "—"],
-                ["Additional Controls:", h.get("additional_controls") or "—"],
+        for index, hazard in enumerate(hazards, 1):
+            category = safe_text(hazard.get("category"))
+            elements.append(Paragraph(f"HAZARD {index}: {category}", section_style))
+            initial_data = [
+                ["Hazard Name:", hazard.get("name")],
+                ["Severity:", hazard.get("severity")],
+                ["Likelihood:", hazard.get("likelihood")],
+                ["Initial Risk Score:", f"{hazard.get('risk_score') if hazard.get('risk_score') is not None else '—'} ({hazard.get('risk_level') or '—'})"],
+                ["Existing Controls:", hazard.get("existing_controls")],
+                ["Additional Controls:", hazard.get("additional_controls")],
+                ["Residual Severity:", hazard.get("residual_severity")],
+                ["Residual Likelihood:", hazard.get("residual_likelihood")],
+                ["Residual Risk Score:", f"{hazard.get('residual_score') if hazard.get('residual_score') is not None else '—'} ({hazard.get('residual_level') or '—'})"],
+                ["Action:", hazard.get("action")],
             ]
-            t1 = Table(hazard_part1, colWidths=[1.5*inch, 5*inch])
-            t1.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
+            elements.append(KeepTogether([
+                make_table(initial_data, [1.45 * inch, 5.25 * inch]),
+                Spacer(1, 12),
             ]))
-            elements.append(t1)
 
-            elements.append(Spacer(1, 4))
-            elements.append(HRFlowable(
-                width="100%", thickness=0.5,
-                color=gold, spaceBefore=2, spaceAfter=6
-            ))
-
-            hazard_part2 = [
-                ["Residual Severity:", str(h.get("residual_severity") or "—")],
-                ["Residual Likelihood:", str(h.get("residual_likelihood") or "—")],
-                ["Residual Risk Score:", f"{h.get('residual_score') or 0} ({h.get('residual_level') or '—'})"],
-                ["Action:", h.get("action") or "—"],
-            ]
-            t2 = Table(hazard_part2, colWidths=[1.5*inch, 5*inch])
-            t2.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ]))
-            elements.append(t2)
-            elements.append(Spacer(1, 14))
-
-        elements.append(Spacer(1, 16))
-        elements.append(HRFlowable(
-            width="100%", thickness=0.5,
-            color=navy, spaceBefore=2, spaceAfter=8
-        ))
-        elements.append(Paragraph(
-            "SMART SAFETY. STRONG FUTURE.",
-            ParagraphStyle("footer", parent=styles["Normal"],
-                          fontSize=10, textColor=gold, alignment=1)
-        ))
+        elements.extend([
+            Spacer(1, 8),
+            HRFlowable(width="100%", thickness=0.6, color=navy, spaceBefore=3, spaceAfter=8),
+            Paragraph("SMART SAFETY. STRONG FUTURE.", footer_style),
+        ])
 
         doc.build(elements)
         buffer.seek(0)
-
-        filename = f"{assessment.get('reference', 'assessment')}.pdf"
+        filename_ref = str(assessment.get("reference") or f"assessment-{assessment_id}")
+        filename_ref = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in filename_ref)
+        filename = f"{filename_ref or f'assessment-{assessment_id}'}.pdf"
         return send_file(
             buffer,
             as_attachment=True,
             download_name=filename,
-            mimetype="application/pdf"
+            mimetype="application/pdf",
         )
 
     except Exception as e:
-        return f"PDF generation failed: {e}"
+        app.logger.exception("PDF generation failed for assessment %s", assessment_id)
+        return f"PDF generation failed. Please check the application log. ({type(e).__name__})", 500
+    finally:
+        if conn is not None:
+            conn.close()
 
 @app.route("/profile")
 def profile():

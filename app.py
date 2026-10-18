@@ -226,6 +226,7 @@ def logout():
 def dashboard():
     if "username" not in session:
         return redirect(url_for("login"))
+    is_admin = session.get("role_id") in (3, 4)
 
     stats = {
         "total_assessments": 0,
@@ -233,10 +234,24 @@ def dashboard():
         "high_critical": 0,
         "recent": []
     }
+    role_name = "Unknown"
 
     try:
         conn = get_db_connection()
-        if os.environ.get('DATABASE_URL'):
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        
+        # --- Get the user's role name ---
+        if is_postgres:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT name FROM roles WHERE id = %s", (session.get("role_id"),))
+            role_row = cursor.fetchone()
+            if role_row: role_name = role_row["name"]
+        else:
+            role_row = conn.execute("SELECT name FROM roles WHERE id = ?", (session.get("role_id"),)).fetchone()
+            if role_row: role_name = role_row["name"]
+
+        # --- Existing Stats Logic ---
+        if is_postgres:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute("SELECT COUNT(*) AS c FROM assessments")
             stats["total_assessments"] = cursor.fetchone()["c"]
@@ -261,7 +276,9 @@ def dashboard():
         active="dashboard",
         username=session.get("username"),
         full_name=session.get("full_name"),
-        stats=stats
+        stats=stats,
+        role_name=role_name,
+        is_admin=is_admin  
     )
 
 @app.route("/new", methods=["GET", "POST"])
@@ -620,6 +637,68 @@ def assessment_pdf(assessment_id):
     finally:
         if conn is not None:
             conn.close()
+
+# ============================================
+# ADMIN DASHBOARD ROUTES
+# ============================================
+
+@app.route("/admin")
+def admin_panel():
+    if "username" not in session:
+        return redirect(url_for("login"))
+        
+    if session.get("role_id") not in (3, 4):
+        return "Access Denied. You do not have permission to view this page.", 403
+
+    users = []
+    try:
+        conn = get_db_connection()
+        if os.environ.get('DATABASE_URL'):
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT username, full_name, organization_name, is_active, role_id FROM users ORDER BY id")
+            users = cursor.fetchall()
+        else:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT username, full_name, organization_name, is_active, role_id FROM users ORDER BY id").fetchall()
+            users = [dict(r) for r in rows]
+        conn.close()
+    except Exception as e:
+        print("Admin DB error:", e)
+
+    return render_template("admin.html", active="admin", users=users)
+
+@app.route("/admin/toggle_user/<username>", methods=["POST"])
+def toggle_user_status(username):
+    if "username" not in session or session.get("role_id") not in (3, 4):
+        return "Access Denied", 403
+
+    if username == session.get("username"):
+        return "You cannot deactivate your own account.", 400
+
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT is_active FROM users WHERE username = {q}", (username,))
+        row = cursor.fetchone()
+        
+        if row:
+            current_status = row[0]
+            new_status = 0 if current_status == 1 else 1
+            
+            cursor.execute(f"UPDATE users SET is_active = {q} WHERE username = {q}", (new_status, username))
+            conn.commit()
+            
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print("Toggle user error:", e)
+
+    return redirect(url_for("admin_panel"))
+
+# ============================================
 
 @app.route("/profile")
 def profile():

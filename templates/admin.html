@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Panel - ALPHA HSE RISK{% endblock %}
+{% block header_title %}Admin Panel{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <h2 style="font-size:16px; color:#0F1E3D; margin-bottom:6px;">
+        System Administration
+    </h2>
+    <p style="color:#6B7280; font-size:14px; margin-bottom: 20px;">Manage users, roles, and analytics.</p>
+    
+    <div style="background:#E0F2FE; border-left:4px solid #0284C7; padding: 12px; border-radius: 4px; margin-bottom: 20px;">
+        <p style="font-size:12px; color:#075985; margin-bottom:4px; font-weight: bold;">Web App Status</p>
+        <p style="font-size:16px; color:#075985; font-weight:bold;">✅ Cloud Database Synced</p>
+    </div>
+
+    <h3 style="color:#0F1E3D; margin-bottom: 10px; font-size: 15px;">Registered Users</h3>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+                <tr style="background: #0A1E3D; color: #C9A84C; text-align: left;">
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Username</th>
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Full Name</th>
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Organization</th>
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Status</th>
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Action</th> <!-- NEW COLUMN -->
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr style="border-bottom: 1px solid #E5E7EB; background: #FFFFFF;">
+                    <td style="padding: 10px; font-weight: bold; color: #0A1E3D;">{{ user.username }}</td>
+                    <td style="padding: 10px; color: #4B5563;">{{ user.full_name }}</td>
+                    <td style="padding: 10px; color: #4B5563;">{{ user.organization_name }}</td>
+                    <td style="padding: 10px;">
+                        {% if user.is_active %}
+                            <span style="color: #059669; font-weight: bold; background: #D1FAE5; padding: 2px 6px; border-radius: 4px;">Active</span>
+                        {% else %}
+                            <span style="color: #DC2626; font-weight: bold; background: #FEE2E2; padding: 2px 6px; border-radius: 4px;">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 10px;">
+                        <!-- NEW ACTION BUTTON -->
+                        <form method="POST" action="/admin/toggle_user/{{ user.username }}" style="margin:0;">
+                            {% if user.is_active %}
+                                <button type="submit" style="background:#FEE2E2; color:#DC2626; border:1px solid #FCA5A5; padding: 4px 8px; border-radius: 4px; font-weight:bold; cursor:pointer;">Deactivate</button>
+                            {% else %}
+                                <button type="submit" style="background:#D1FAE5; color:#059669; border:1px solid #6EE7B7; padding: 4px 8px; border-radius: 4px; font-weight:bold; cursor:pointer;">Activate</button>
+                            {% endif %}
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" style="padding: 15px; text-align: center; color: #6B7280;">No users found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

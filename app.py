@@ -523,7 +523,7 @@ def assessment_pdf(assessment_id):
             wordWrap="CJK",
         )
         label_style = ParagraphStyle(
-            "AlphaLabel", parent=cell_style, fontName="Helvetica-Bold",
+            "AlphaLabel", parent=cell_style, fontName="Helvetica-Bold",textColor=gold
         )
         footer_style = ParagraphStyle(
             "AlphaFooter", parent=styles["Normal"],

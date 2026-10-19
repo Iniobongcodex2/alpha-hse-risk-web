@@ -109,12 +109,18 @@
     </div>
 
     <!-- BUTTONS -->
-    <div style="display:flex; gap:10px; margin-top:10px; margin-bottom: 20px;">
-        <button type="button" onclick="addHazard()" class="btn-primary" style="background:#1A4B8C; color:#FFFFFF; flex:1;">
+    <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px; margin-bottom: 20px;">
+        <button type="submit" class="btn-primary btn-green" style="width:100%;">
+            💾 Save Assessment
+        </button>
+        
+        <button type="button" onclick="addHazard()" class="btn-primary" style="background:#1A4B8C; color:#FFFFFF; width:100%;">
             ➕ Add Another Hazard
         </button>
-        <button type="submit" class="btn-primary btn-green" style="flex:1;">
-            💾 Save Assessment
+        
+        <!-- CLEAR ALL BUTTON -->
+        <button type="button" onclick="clearAll()" class="btn-primary" style="background:#DC2626; color:#FFFFFF; width:100%;">
+            🗑️ Clear All Data
         </button>
     </div>
 
@@ -181,6 +187,37 @@
         blocks.forEach((block, index) => {
             block.querySelector('.hazard-number').textContent = index + 1;
         });
+    }
+
+    // ---- Clear All Logic ----
+    function clearAll() {
+        if (confirm("Are you sure you want to clear the entire form? All unsaved data will be lost.")) {
+            const form = document.getElementById('assessment-form');
+            form.reset(); // Resets all standard inputs
+
+            const container = document.getElementById('hazards-container');
+            const blocks = container.querySelectorAll('.hazard-block');
+            
+            // Remove all extra hazard blocks, keeping only the first one
+            for (let i = 1; i < blocks.length; i++) {
+                blocks[i].remove();
+            }
+            
+            // Reset the first block completely
+            const firstBlock = container.querySelector('.hazard-block');
+            if (firstBlock) {
+                firstBlock.querySelectorAll('input, textarea, select').forEach(input => {
+                    input.value = '';
+                });
+                const select = firstBlock.querySelector('.category-select');
+                if (select) select.selectedIndex = 0;
+                
+                const customDiv = firstBlock.querySelector('.custom-category-div');
+                if (customDiv) customDiv.style.display = 'none';
+                
+                firstBlock.querySelector('.hazard-number').textContent = '1';
+            }
+        }
     }
 </script>
 

@@ -262,24 +262,19 @@ def dashboard():
         "recent": []
     }
     role_name = "Unknown"
+    risk_dist = {"Low": 0, "Medium": 0, "High": 0, "Critical": 0}
+    top_categories = []
 
     try:
         conn = get_db_connection()
         is_postgres = os.environ.get('DATABASE_URL') is not None
         
-        # --- Get the user's role name ---
         if is_postgres:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute("SELECT name FROM roles WHERE id = %s", (session.get("role_id"),))
             role_row = cursor.fetchone()
             if role_row: role_name = role_row["name"]
-        else:
-            role_row = conn.execute("SELECT name FROM roles WHERE id = ?", (session.get("role_id"),)).fetchone()
-            if role_row: role_name = role_row["name"]
 
-        # --- Existing Stats Logic (NOW FILTERED BY ORGANIZATION) ---
-        if is_postgres:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute("SELECT COUNT(*) AS c FROM assessments WHERE organization = %s", (user_org,))
             stats["total_assessments"] = cursor.fetchone()["c"]
             
@@ -289,14 +284,36 @@ def dashboard():
             cursor.execute("SELECT COUNT(*) AS c FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = %s AND h.residual_level IN ('High', 'Critical')", (user_org,))
             stats["high_critical"] = cursor.fetchone()["c"]
             
-            cursor.execute("SELECT reference, organization, project, date_created FROM assessments WHERE organization = %s ORDER BY id DESC LIMIT 3", (user_org,))
+            cursor.execute("SELECT reference, organization, project, date_created FROM assessments WHERE organization = %s ORDER BY id DESC LIMIT 5", (user_org,))
             stats["recent"] = cursor.fetchall()
+
+            cursor.execute("SELECT h.residual_level, COUNT(*) as count FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = %s GROUP BY h.residual_level", (user_org,))
+            for row in cursor.fetchall():
+                if row["residual_level"] in risk_dist:
+                    risk_dist[row["residual_level"]] = row["count"]
+
+            cursor.execute("SELECT h.category, COUNT(*) as count FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = %s GROUP BY h.category ORDER BY count DESC LIMIT 5", (user_org,))
+            top_categories = [dict(row) for row in cursor.fetchall()]
+
         else:
+            role_row = conn.execute("SELECT name FROM roles WHERE id = ?", (session.get("role_id"),)).fetchone()
+            if role_row: role_name = role_row["name"]
+
             stats["total_assessments"] = conn.execute("SELECT COUNT(*) AS c FROM assessments WHERE organization = ?", (user_org,)).fetchone()["c"]
             stats["total_hazards"] = conn.execute("SELECT COUNT(*) AS c FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = ?", (user_org,)).fetchone()["c"]
             stats["high_critical"] = conn.execute("SELECT COUNT(*) AS c FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = ? AND h.residual_level IN ('High', 'Critical')", (user_org,)).fetchone()["c"]
-            rows = conn.execute("SELECT reference, organization, project, date_created FROM assessments WHERE organization = ? ORDER BY id DESC LIMIT 3", (user_org,)).fetchall()
+            
+            rows = conn.execute("SELECT reference, organization, project, date_created FROM assessments WHERE organization = ? ORDER BY id DESC LIMIT 5", (user_org,)).fetchall()
             stats["recent"] = [dict(r) for r in rows]
+
+            dist_rows = conn.execute("SELECT h.residual_level, COUNT(*) as count FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = ? GROUP BY h.residual_level", (user_org,)).fetchall()
+            for row in dist_rows:
+                if row["residual_level"] in risk_dist:
+                    risk_dist[row["residual_level"]] = row["count"]
+
+            cat_rows = conn.execute("SELECT h.category, COUNT(*) as count FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = ? GROUP BY h.category ORDER BY count DESC LIMIT 5", (user_org,)).fetchall()
+            top_categories = [dict(r) for r in cat_rows]
+
         conn.close()
     except Exception as e:
         print("Dashboard DB error:", e)
@@ -308,7 +325,9 @@ def dashboard():
         full_name=session.get("full_name"),
         stats=stats,
         role_name=role_name,
-        is_admin=is_admin  
+        is_admin=is_admin,
+        risk_dist=risk_dist,
+        top_categories=top_categories
     )
 
 @app.route("/new", methods=["GET", "POST"])
@@ -322,7 +341,6 @@ def new_assessment():
         location = request.form.get("location", "").strip()
         project = request.form.get("project", "").strip()
         
-        # Get lists of hazard data
         categories = request.form.getlist("category[]")
         custom_categories = request.form.getlist("custom_category[]")
         hazard_names = request.form.getlist("hazard_name[]")
@@ -333,7 +351,6 @@ def new_assessment():
         residual_severities = request.form.getlist("residual_severity[]")
         residual_likelihoods = request.form.getlist("residual_likelihood[]")
 
-        # Basic validation
         if not organization or not hazard_names:
             return render_template("new_assessment.html", active="new", error="Organization and at least one Hazard are required.")
 
@@ -345,7 +362,6 @@ def new_assessment():
             is_postgres = os.environ.get('DATABASE_URL') is not None
             q = "%s" if is_postgres else "?"
             
-            # 1. Insert the Assessment
             if is_postgres:
                 cursor = conn.cursor()
                 cursor.execute(f"""
@@ -363,7 +379,6 @@ def new_assessment():
                 """, (reference, organization, department, location, session.get("full_name", session.get("username")), project, date_now))
                 assessment_id = cursor.lastrowid
 
-            # 2. Loop through the lists and insert each hazard
             for i in range(len(hazard_names)):
                 cat = categories[i]
                 if cat == "Custom":
@@ -400,11 +415,10 @@ def new_assessment():
                       res_sev, res_lik, residual_score, residual_level, action))
 
             conn.commit()
-            log_action(session.get("username"), "CREATE_ASSESSMENT", "Assessment", reference, "Created new multi-hazard assessment")
-            
             cursor.close()
             conn.close()
 
+            log_action(session.get("username"), "CREATE_ASSESSMENT", "Assessment", reference, "Created new multi-hazard assessment")
             return redirect(url_for("history"))
 
         except Exception as e:
@@ -494,6 +508,40 @@ def assessment_detail(assessment_id):
     except Exception as e:
         print("Detail page error:", e)
         return f"Error loading assessment: {e}", 500
+
+@app.route("/assessment/<int:assessment_id>/delete", methods=["POST"])
+def delete_assessment(assessment_id):
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    deleted = False
+
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor = conn.cursor()
+        
+        cursor.execute(f"SELECT id FROM assessments WHERE id = {q} AND organization = {q}", (assessment_id, user_org))
+        row = cursor.fetchone()
+        
+        if row:
+            cursor.execute(f"DELETE FROM hazards WHERE assessment_id = {q}", (assessment_id,))
+            cursor.execute(f"DELETE FROM assessments WHERE id = {q}", (assessment_id,))
+            conn.commit()
+            deleted = True
+            
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print("Delete assessment error:", e)
+
+    if deleted:
+        log_action(session.get("username"), "DELETE_ASSESSMENT", "Assessment", str(assessment_id), "Deleted an assessment")
+
+    return redirect(url_for("history"))
 
 @app.route("/assessment/<int:assessment_id>/pdf")
 def assessment_pdf(assessment_id):
@@ -831,9 +879,10 @@ def admin_create_user():
             """, (username, full_name, email, role_id, organization_name, 1, password_hash))
             
             conn.commit()
-            log_action(session.get("username"), "CREATE_USER", "User", username, f"Created new user in {organization_name}")
             cursor.close()
             conn.close()
+            
+            log_action(session.get("username"), "CREATE_USER", "User", username, f"Created new user in {organization_name}")
             
         except Exception as e:
             print(f"Error creating user: {e}")
@@ -927,10 +976,12 @@ def toggle_user_status(username):
             
             cursor.execute(f"UPDATE users SET is_active = {q} WHERE username = {q} AND organization_name = {q}", (new_status, username, user_org))
             conn.commit()
-            log_action(session.get("username"), "TOGGLE_USER", "User", username, f"Changed active status to {new_status}")
             
         cursor.close()
         conn.close()
+        
+        log_action(session.get("username"), "TOGGLE_USER", "User", username, f"Changed active status to {new_status}")
+            
     except Exception as e:
         print("Toggle user error:", e)
 

@@ -1,135 +1,72 @@
 {% extends "base.html" %}
-{% block title %}{{ assessment.reference }} — ALPHA HSE RISK{% endblock %}
-{% block header_title %}Assessment{% endblock %}
+
+{% block title %}Assessment Detail - ALPHA HSE RISK{% endblock %}
+{% block header_title %}Assessment Details{% endblock %}
 
 {% block content %}
 
 <div class="card">
-    <p style="font-size:12px; color:#6B7280;">Reference</p>
-    <p style="font-size:16px; color:#C9A84C; font-weight:bold; margin-bottom:10px;">
+    <h2 style="font-size:16px; color:#0F1E3D; margin-bottom:6px;">
         {{ assessment.reference }}
+    </h2>
+    <p style="color:#6B7280; font-size:14px; margin-bottom: 20px;">
+        {{ assessment.organization }} | {{ assessment.project }}
     </p>
 
-    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Organization</p>
-    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
-        {{ assessment.organization or '—' }}
-    </p>
-
-    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Department</p>
-    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
-        {{ assessment.department or '—' }}
-    </p>
-
-    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Location / Site</p>
-    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
-        {{ assessment.location or '—' }}
-    </p>
-
-    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Project</p>
-    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
-        {{ assessment.project or '—' }}
-    </p>
-
-    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Assessor</p>
-    <p style="font-size:14px; color:#0F1E3D; font-weight:600;">
-        {{ assessment.assessor or '—' }}
-    </p>
-
-    <p style="font-size:12px; color:#6B7280; margin-top:8px;">Date Created</p>
-    <p style="font-size:13px; color:#6B7280;">
-        {{ assessment.date_created or '—' }}
-    </p>
-</div>
-
-{% for h in hazards %}
-<div class="card" style="border-left:4px solid
-    {% if h.residual_level == 'Critical' %}#8B0000
-    {% elif h.residual_level == 'High' %}#D97706
-    {% elif h.residual_level == 'Medium' %}#C9A84C
-    {% else %}#4A7C59{% endif %};">
-
-    <h3 style="font-size:14px; color:#0F1E3D; margin-bottom:10px;">
-        Hazard {{ loop.index }} — {{ h.category or '—' }}
-    </h3>
-
-    <p style="font-size:12px; color:#6B7280;">Hazard Name</p>
-    <p style="font-size:14px; color:#0F1E3D; font-weight:600; margin-bottom:8px;">
-        {{ h.name or '—' }}
-    </p>
-
-    <div style="display:flex; gap:10px; margin-bottom:8px;">
-        <div style="flex:1; background:#F3F4F6; padding:8px; border-radius:6px;">
-            <p style="font-size:11px; color:#6B7280;">Initial Score</p>
-            <p style="font-size:15px; color:#0F1E3D; font-weight:bold;">
-                {{ h.risk_score or 0 }} ({{ h.risk_level or '—' }})
-            </p>
-        </div>
-        <div style="flex:1; background:#F3F4F6; padding:8px; border-radius:6px;">
-            <p style="font-size:11px; color:#6B7280;">Residual Score</p>
-            <p style="font-size:15px; color:#0F1E3D; font-weight:bold;">
-                {{ h.residual_score or 0 }} ({{ h.residual_level or '—' }})
-            </p>
-        </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; font-size: 13px;">
+        <div><strong style="color:#0A1E3D;">Department:</strong> <br>{{ assessment.department or '—' }}</div>
+        <div><strong style="color:#0A1E3D;">Location:</strong> <br>{{ assessment.location or '—' }}</div>
+        <div><strong style="color:#0A1E3D;">Assessor:</strong> <br>{{ assessment.assessor or '—' }}</div>
+        <div><strong style="color:#0A1E3D;">Date:</strong> <br>{{ assessment.date_created or '—' }}</div>
     </div>
 
-    <p style="font-size:12px; color:#6B7280;">Existing Controls</p>
-    <p style="font-size:13px; color:#0F1E3D; margin-bottom:8px;">
-        {{ h.existing_controls or '—' }}
-    </p>
-
-    <p style="font-size:12px; color:#6B7280;">Additional Controls</p>
-    <p style="font-size:13px; color:#0F1E3D; margin-bottom:8px;">
-        {{ h.additional_controls or '—' }}
-    </p>
-
-    <p style="font-size:12px; color:#6B7280;">Action</p>
-    <p style="font-size:13px; color:#0F1E3D; font-weight:600;">
-        {{ h.action or '—' }}
-    </p>
-
+    <h3 style="font-size: 15px; color: #0A1E3D; margin-bottom: 10px; border-top: 1px solid #E5E7EB; padding-top: 15px;">Hazards</h3>
+    
+    {% for hazard in hazards %}
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+        <h4 style="font-size: 14px; color: #0A1E3D; margin-bottom: 10px; font-weight: bold;">
+            HAZARD {{ loop.index }}: {{ hazard.category }}
+        </h4>
+        
+        <div style="font-size: 13px; line-height: 1.6;">
+            <p><strong>Hazard Name:</strong> {{ hazard.name }}</p>
+            <p><strong>Initial Risk:</strong> {{ hazard.severity }} × {{ hazard.likelihood }} = <strong>{{ hazard.risk_score }} ({{ hazard.risk_level }})</strong></p>
+            <p><strong>Existing Controls:</strong> {{ hazard.existing_controls or '—' }}</p>
+            <p><strong>Additional Controls:</strong> {{ hazard.additional_controls or '—' }}</p>
+            <p><strong>Residual Risk:</strong> {{ hazard.residual_severity }} × {{ hazard.residual_likelihood }} = <strong>{{ hazard.residual_score }} ({{ hazard.residual_level }})</strong></p>
+            <p style="color: #B45309; font-weight: bold; margin-top: 5px;">Action: {{ hazard.action }}</p>
+        </div>
+    </div>
+    {% else %}
+    <p style="color: #6B7280; font-size: 13px;">No hazards recorded.</p>
+    {% endfor %}
 </div>
-{% endfor %}
 
-<!-- DOWNLOAD BUTTONS -->
-<div style="display:flex; flex-direction:column; gap:10px; margin-top:14px;">
-    <a href="/assessment/{{ assessment.id }}/pdf"
-       class="btn-primary btn-green"
-       style="display:block; text-align:center; text-decoration:none;">
+<!-- ACTION BUTTONS -->
+<div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
+
+    <!-- PDF -->
+    <a href="/assessment/{{ assessment.id }}/pdf" style="display: block; width: 100%; padding: 14px; background: #4A7C59; color: #FFFFFF; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; text-align: center; text-decoration: none;">
         📄 Download PDF
     </a>
-    
-    <a href="/assessment/{{ assessment.id }}/excel"
-       class="btn-primary"
-       style="display:block; text-align:center; text-decoration:none; background:#1A4B8C; color:#FFFFFF;">
+
+    <!-- EXCEL -->
+    <a href="/assessment/{{ assessment.id }}/excel" style="display: block; width: 100%; padding: 14px; background: #1A4B8C; color: #FFFFFF; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; text-align: center; text-decoration: none;">
         📊 Export to Excel
     </a>
+
+    <!-- DELETE (The missing piece) -->
+    <form method="POST" action="/assessment/{{ assessment.id }}/delete" style="margin-top: 15px;">
+        <button type="submit" onclick="return confirm('Are you sure you want to permanently delete this assessment? This cannot be undone.');" 
+                style="width: 100%; padding: 14px; background: #DC2626; color: #FFFFFF; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer;">
+            🗑️ Delete Assessment
+        </button>
+    </form>
+
+    <!-- BACK TO HISTORY -->
+    <a href="/history" style="display: block; width: 100%; padding: 14px; background: #0A1E3D; color: #C9A84C; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; text-align: center; text-decoration: none; margin-top: 10px;">
+        ← Back to History
+    </a>
 </div>
-
-<button onclick="shareAssessment()"
-        style="display:block; margin-top:10px; width:100%; background:#C9A84C; color:#0F1E3D; border:none; padding:16px; border-radius:10px; font-size:16px; font-weight:bold; min-height:54px; cursor:pointer;">
-    📤 Share
-</button>
-
-<a href="/history" class="btn-primary" style="display:block; margin-top:14px; background:#0F1E3D; color:#C9A84C; text-align:center; text-decoration:none;">
-    ← Back to History
-</a>
-
-<script>
-function shareAssessment() {
-    const url = window.location.href;
-    const title = "{{ assessment.reference }}";
-    if (navigator.share) {
-        navigator.share({
-            title: title,
-            text: "ALPHA HSE RISK Assessment: " + title,
-            url: url
-        }).catch(() => {});
-    } else {
-        navigator.clipboard.writeText(url).then(() => {
-            alert("Link copied to clipboard: " + url);
-        });
-    }
-}
-</script>
 
 {% endblock %}

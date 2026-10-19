@@ -9,9 +9,13 @@
     <div class="card">
         <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Assessment Details</h2>
 
+        <!-- NEW: Hidden field locks the organization to the user's profile -->
+        <input type="hidden" name="organization" value="{{ session.get('organization_name', 'Unknown') }}">
+
         <label style="font-size:13px; color:#6B7280; font-weight:600;">Organization</label>
-        <input type="text" name="organization" placeholder="Organization" required
-               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+        <!-- NEW: Read-only display so they see what company they are logged in as -->
+        <input type="text" value="{{ session.get('organization_name', 'Unknown') }}" readonly
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#F3F4F6; color:#6B7280; cursor:not-allowed;">
 
         <label style="font-size:13px; color:#6B7280; font-weight:600;">Department</label>
         <input type="text" name="department" placeholder="Department"

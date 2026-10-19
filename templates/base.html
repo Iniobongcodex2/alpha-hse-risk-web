@@ -152,6 +152,15 @@
             <span class="nav-icon">📋</span>
             <span>History</span>
         </a>
+        
+        <!-- 🚨 NEW: Admin button shows only for Managers (3) and Admins (4) -->
+        {% if session.get('role_id') == 3 or session.get('role_id') == 4 %}
+        <a href="/admin" class="{% if active == 'admin' %}active{% endif %}">
+            <span class="nav-icon">🛡️</span>
+            <span>Admin</span>
+        </a>
+        {% endif %}
+
         <a href="/profile" class="{% if active == 'profile' %}active{% endif %}">
             <span class="nav-icon">👤</span>
             <span>Profile</span>

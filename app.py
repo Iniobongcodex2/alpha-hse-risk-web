@@ -187,13 +187,13 @@ def login():
                 if os.environ.get('DATABASE_URL'):
                     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
                     cursor.execute(
-                        "SELECT username, full_name, role_id, is_active, password_hash "
+                        "SELECT username, full_name, role_id, is_active, password_hash, organization_name "
                         "FROM users WHERE username = %s", (username,)
                     )
                     row = cursor.fetchone()
                 else:
                     row = conn.execute(
-                        "SELECT username, full_name, role_id, is_active, password_hash "
+                        "SELECT username, full_name, role_id, is_active, password_hash, organization_name "
                         "FROM users WHERE username = ?", (username,)
                     ).fetchone()
                 conn.close()
@@ -210,6 +210,7 @@ def login():
                     session["username"] = row["username"]
                     session["full_name"] = row["full_name"] or row["username"]
                     session["role_id"] = row["role_id"]
+                    session["organization_name"] = row["organization_name"] # SAVED TO SESSION FOR SAAS
                     return redirect(url_for("dashboard"))
 
             except Exception as e:
@@ -226,7 +227,9 @@ def logout():
 def dashboard():
     if "username" not in session:
         return redirect(url_for("login"))
+    
     is_admin = session.get("role_id") in (3, 4)
+    user_org = session.get("organization_name", "Unknown")
 
     stats = {
         "total_assessments": 0,
@@ -250,22 +253,25 @@ def dashboard():
             role_row = conn.execute("SELECT name FROM roles WHERE id = ?", (session.get("role_id"),)).fetchone()
             if role_row: role_name = role_row["name"]
 
-        # --- Existing Stats Logic ---
+        # --- Existing Stats Logic (NOW FILTERED BY ORGANIZATION) ---
         if is_postgres:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cursor.execute("SELECT COUNT(*) AS c FROM assessments")
+            cursor.execute("SELECT COUNT(*) AS c FROM assessments WHERE organization = %s", (user_org,))
             stats["total_assessments"] = cursor.fetchone()["c"]
-            cursor.execute("SELECT COUNT(*) AS c FROM hazards")
+            
+            cursor.execute("SELECT COUNT(*) AS c FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = %s", (user_org,))
             stats["total_hazards"] = cursor.fetchone()["c"]
-            cursor.execute("SELECT COUNT(*) AS c FROM hazards WHERE residual_level IN ('High', 'Critical')")
+            
+            cursor.execute("SELECT COUNT(*) AS c FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = %s AND h.residual_level IN ('High', 'Critical')", (user_org,))
             stats["high_critical"] = cursor.fetchone()["c"]
-            cursor.execute("SELECT reference, organization, project, date_created FROM assessments ORDER BY id DESC LIMIT 3")
+            
+            cursor.execute("SELECT reference, organization, project, date_created FROM assessments WHERE organization = %s ORDER BY id DESC LIMIT 3", (user_org,))
             stats["recent"] = cursor.fetchall()
         else:
-            stats["total_assessments"] = conn.execute("SELECT COUNT(*) AS c FROM assessments").fetchone()["c"]
-            stats["total_hazards"] = conn.execute("SELECT COUNT(*) AS c FROM hazards").fetchone()["c"]
-            stats["high_critical"] = conn.execute("SELECT COUNT(*) AS c FROM hazards WHERE residual_level IN ('High', 'Critical')").fetchone()["c"]
-            rows = conn.execute("SELECT reference, organization, project, date_created FROM assessments ORDER BY id DESC LIMIT 3").fetchall()
+            stats["total_assessments"] = conn.execute("SELECT COUNT(*) AS c FROM assessments WHERE organization = ?", (user_org,)).fetchone()["c"]
+            stats["total_hazards"] = conn.execute("SELECT COUNT(*) AS c FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = ?", (user_org,)).fetchone()["c"]
+            stats["high_critical"] = conn.execute("SELECT COUNT(*) AS c FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = ? AND h.residual_level IN ('High', 'Critical')", (user_org,)).fetchone()["c"]
+            rows = conn.execute("SELECT reference, organization, project, date_created FROM assessments WHERE organization = ? ORDER BY id DESC LIMIT 3", (user_org,)).fetchall()
             stats["recent"] = [dict(r) for r in rows]
         conn.close()
     except Exception as e:
@@ -287,7 +293,9 @@ def new_assessment():
         return redirect(url_for("login"))
 
     if request.method == "POST":
-        organization = request.form.get("organization", "").strip()
+        # SaaS SECURITY: Lock the organization to the user's session!
+        organization = session.get("organization_name", "Unknown")
+        
         department = request.form.get("department", "").strip()
         location = request.form.get("location", "").strip()
         project = request.form.get("project", "").strip()
@@ -378,6 +386,7 @@ def history():
     if "username" not in session:
         return redirect(url_for("login"))
 
+    user_org = session.get("organization_name", "Unknown")
     assessments = []
     try:
         conn = get_db_connection()
@@ -389,10 +398,11 @@ def history():
                        COUNT(h.id) AS hazard_count
                 FROM assessments a
                 LEFT JOIN hazards h ON h.assessment_id = a.id
+                WHERE a.organization = %s
                 GROUP BY a.id, a.reference, a.organization, a.project, a.date_created
                 ORDER BY a.id DESC
                 LIMIT 50
-            """)
+            """, (user_org,))
             assessments = cursor.fetchall()
         else:
             rows = conn.execute("""
@@ -401,10 +411,11 @@ def history():
                        COUNT(h.id) AS hazard_count
                 FROM assessments a
                 LEFT JOIN hazards h ON h.assessment_id = a.id
+                WHERE a.organization = ?
                 GROUP BY a.id
                 ORDER BY a.id DESC
                 LIMIT 50
-            """).fetchall()
+            """, (user_org,)).fetchall()
             assessments = [dict(r) for r in rows]
         conn.close()
     except Exception as e:
@@ -418,27 +429,30 @@ def assessment_detail(assessment_id):
     if "username" not in session:
         return redirect(url_for("login"))
 
+    user_org = session.get("organization_name", "Unknown")
+
     try:
         conn = get_db_connection()
         if os.environ.get('DATABASE_URL'):
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cursor.execute("SELECT * FROM assessments WHERE id = %s", (assessment_id,))
+            # SaaS SECURITY: Ensure it belongs to their org!
+            cursor.execute("SELECT * FROM assessments WHERE id = %s AND organization = %s", (assessment_id, user_org))
             a_row = cursor.fetchone()
 
             if a_row is None:
                 conn.close()
-                return redirect(url_for("history"))
+                return "Access Denied: This assessment belongs to another organization.", 403
             assessment = dict(a_row)
 
             cursor.execute("SELECT * FROM hazards WHERE assessment_id = %s ORDER BY id", (assessment_id,))
             hazards = cursor.fetchall()
         else:
             conn.row_factory = sqlite3.Row
-            a_row = conn.execute("SELECT * FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
+            a_row = conn.execute("SELECT * FROM assessments WHERE id = ? AND organization = ?", (assessment_id, user_org)).fetchone()
 
             if a_row is None:
                 conn.close()
-                return redirect(url_for("history"))
+                return "Access Denied: This assessment belongs to another organization.", 403
             assessment = dict(a_row)
 
             h_rows = conn.execute("SELECT * FROM hazards WHERE assessment_id = ? ORDER BY id", (assessment_id,)).fetchall()
@@ -456,6 +470,8 @@ def assessment_pdf(assessment_id):
     """Generate and download a PDF copy of one saved risk assessment."""
     if "username" not in session:
         return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
 
     from io import BytesIO
     from html import escape
@@ -476,10 +492,11 @@ def assessment_pdf(assessment_id):
 
         if is_postgres:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cursor.execute("SELECT * FROM assessments WHERE id = %s", (assessment_id,))
+            # SaaS SECURITY: Ensure it belongs to their org!
+            cursor.execute("SELECT * FROM assessments WHERE id = %s AND organization = %s", (assessment_id, user_org))
             assessment_row = cursor.fetchone()
             if assessment_row is None:
-                return redirect(url_for("history"))
+                return "Access Denied: This assessment belongs to another organization.", 403
             assessment = dict(assessment_row)
             cursor.execute(
                 "SELECT * FROM hazards WHERE assessment_id = %s ORDER BY id",
@@ -489,10 +506,10 @@ def assessment_pdf(assessment_id):
             cursor.close()
         else:
             assessment_row = conn.execute(
-                "SELECT * FROM assessments WHERE id = ?", (assessment_id,)
+                "SELECT * FROM assessments WHERE id = ? AND organization = ?", (assessment_id, user_org)
             ).fetchone()
             if assessment_row is None:
-                return redirect(url_for("history"))
+                return "Access Denied: This assessment belongs to another organization.", 403
             assessment = dict(assessment_row)
             hazard_rows = conn.execute(
                 "SELECT * FROM hazards WHERE assessment_id = ? ORDER BY id",
@@ -650,16 +667,20 @@ def admin_panel():
     if session.get("role_id") not in (3, 4):
         return "Access Denied. You do not have permission to view this page.", 403
 
+    user_org = session.get("organization_name")
     users = []
+    
     try:
         conn = get_db_connection()
         if os.environ.get('DATABASE_URL'):
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cursor.execute("SELECT username, full_name, organization_name, is_active, role_id FROM users ORDER BY id")
+            # SaaS SECURITY: Only show users from the Admin's own organization
+            cursor.execute("SELECT username, full_name, organization_name, is_active, role_id FROM users WHERE organization_name = %s ORDER BY id", (user_org,))
             users = cursor.fetchall()
         else:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT username, full_name, organization_name, is_active, role_id FROM users ORDER BY id").fetchall()
+            # SaaS SECURITY: Same for SQLite
+            rows = conn.execute("SELECT username, full_name, organization_name, is_active, role_id FROM users WHERE organization_name = ? ORDER BY id", (user_org,)).fetchall()
             users = [dict(r) for r in rows]
         conn.close()
     except Exception as e:
@@ -675,20 +696,25 @@ def toggle_user_status(username):
     if username == session.get("username"):
         return "You cannot deactivate your own account.", 400
 
+    user_org = session.get("organization_name")
+
     try:
         conn = get_db_connection()
         is_postgres = os.environ.get('DATABASE_URL') is not None
         q = "%s" if is_postgres else "?"
         
         cursor = conn.cursor()
-        cursor.execute(f"SELECT is_active FROM users WHERE username = {q}", (username,))
+        
+        # SaaS SECURITY: Check if the user exists AND belongs to the Admin's organization
+        cursor.execute(f"SELECT is_active FROM users WHERE username = {q} AND organization_name = {q}", (username, user_org))
         row = cursor.fetchone()
         
         if row:
             current_status = row[0]
             new_status = 0 if current_status == 1 else 1
             
-            cursor.execute(f"UPDATE users SET is_active = {q} WHERE username = {q}", (new_status, username))
+            # SaaS SECURITY: Update only if they belong to the same org
+            cursor.execute(f"UPDATE users SET is_active = {q} WHERE username = {q} AND organization_name = {q}", (new_status, username, user_org))
             conn.commit()
             
         cursor.close()

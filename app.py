@@ -8,6 +8,10 @@ import psycopg2.extras
 import os
 import hashlib
 import datetime
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+from io import BytesIO
+from flask import send_file
 
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key-later-2026"
@@ -61,6 +65,25 @@ def calculate_risk_level(score):
         return "Medium"
     else:
         return "Low"
+
+def log_action(username, action, target_type, target_id, details):
+    """Helper function to write an action to the audit_log table."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor.execute(f"""
+            INSERT INTO audit_log (username, action, target_type, target_id, details)
+            VALUES ({q}, {q}, {q}, {q}, {q})
+        """, (username, action, target_type, target_id, details))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Failed to write audit log: {e}")
 
 def setup_database():
     """Creates tables if they don't exist, and seeds the admin user."""
@@ -210,7 +233,8 @@ def login():
                     session["username"] = row["username"]
                     session["full_name"] = row["full_name"] or row["username"]
                     session["role_id"] = row["role_id"]
-                    session["organization_name"] = row["organization_name"] # SAVED TO SESSION FOR SAAS
+                    session["organization_name"] = row["organization_name"] 
+                    log_action(row["username"], "LOGIN", "User", row["username"], "Successful login")
                     return redirect(url_for("dashboard"))
 
             except Exception as e:
@@ -293,45 +317,25 @@ def new_assessment():
         return redirect(url_for("login"))
 
     if request.method == "POST":
-        # SaaS SECURITY: Lock the organization to the user's session!
         organization = session.get("organization_name", "Unknown")
-        
         department = request.form.get("department", "").strip()
         location = request.form.get("location", "").strip()
         project = request.form.get("project", "").strip()
-        category = request.form.get("category", "").strip()
-        hazard_name = request.form.get("hazard_name", "").strip()
-        existing_controls = request.form.get("existing_controls", "").strip()
-        additional_controls = request.form.get("additional_controls", "").strip()
+        
+        # Get lists of hazard data
+        categories = request.form.getlist("category[]")
+        custom_categories = request.form.getlist("custom_category[]")
+        hazard_names = request.form.getlist("hazard_name[]")
+        severities = request.form.getlist("severity[]")
+        likelihoods = request.form.getlist("likelihood[]")
+        existing_controls_list = request.form.getlist("existing_controls[]")
+        additional_controls_list = request.form.getlist("additional_controls[]")
+        residual_severities = request.form.getlist("residual_severity[]")
+        residual_likelihoods = request.form.getlist("residual_likelihood[]")
 
-        try:
-            severity = int(request.form.get("severity", 0))
-            likelihood = int(request.form.get("likelihood", 0))
-            residual_severity = int(request.form.get("residual_severity", 0))
-            residual_likelihood = int(request.form.get("residual_likelihood", 0))
-        except:
-            severity = likelihood = residual_severity = residual_likelihood = 0
-
-        if not organization or not hazard_name:
-            return render_template("new_assessment.html", active="new", error="Organization and Hazard Name are required.")
-        if not (1 <= severity <= 5) or not (1 <= likelihood <= 5):
-            return render_template("new_assessment.html", active="new", error="Severity and Likelihood must be 1-5.")
-        if not (1 <= residual_severity <= 5) or not (1 <= residual_likelihood <= 5):
-            return render_template("new_assessment.html", active="new", error="Residual values must be 1-5.")
-
-        risk_score = severity * likelihood
-        risk_level = calculate_risk_level(risk_score)
-        residual_score = residual_severity * residual_likelihood
-        residual_level = calculate_risk_level(residual_score)
-
-        if residual_level == "Critical":
-            action = "STOP WORK - Immediate action required!"
-        elif residual_level == "High":
-            action = "Review controls - Action required"
-        elif residual_level == "Medium":
-            action = "Review controls and monitor"
-        else:
-            action = "Monitor - No immediate action required"
+        # Basic validation
+        if not organization or not hazard_names:
+            return render_template("new_assessment.html", active="new", error="Organization and at least one Hazard are required.")
 
         reference = "HSE-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -341,6 +345,7 @@ def new_assessment():
             is_postgres = os.environ.get('DATABASE_URL') is not None
             q = "%s" if is_postgres else "?"
             
+            # 1. Insert the Assessment
             if is_postgres:
                 cursor = conn.cursor()
                 cursor.execute(f"""
@@ -358,19 +363,45 @@ def new_assessment():
                 """, (reference, organization, department, location, session.get("full_name", session.get("username")), project, date_now))
                 assessment_id = cursor.lastrowid
 
-            cursor.execute(f"""
-                INSERT INTO hazards
-                (assessment_id, category, name, severity, likelihood,
-                 risk_score, risk_level, existing_controls, additional_controls,
-                 residual_severity, residual_likelihood, residual_score,
-                 residual_level, action)
-                VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
-            """, (assessment_id, category, hazard_name, severity, likelihood,
-                  risk_score, risk_level, existing_controls, additional_controls,
-                  residual_severity, residual_likelihood, residual_score,
-                  residual_level, action))
+            # 2. Loop through the lists and insert each hazard
+            for i in range(len(hazard_names)):
+                cat = categories[i]
+                if cat == "Custom":
+                    cat = custom_categories[i]
+                
+                sev = int(severities[i])
+                lik = int(likelihoods[i])
+                res_sev = int(residual_severities[i])
+                res_lik = int(residual_likelihoods[i])
+
+                risk_score = sev * lik
+                risk_level = calculate_risk_level(risk_score)
+                residual_score = res_sev * res_lik
+                residual_level = calculate_risk_level(residual_score)
+
+                if residual_level == "Critical":
+                    action = "STOP WORK - Immediate action required!"
+                elif residual_level == "High":
+                    action = "Review controls - Action required"
+                elif residual_level == "Medium":
+                    action = "Review controls and monitor"
+                else:
+                    action = "Monitor - No immediate action required"
+
+                cursor.execute(f"""
+                    INSERT INTO hazards
+                    (assessment_id, category, name, severity, likelihood,
+                     risk_score, risk_level, existing_controls, additional_controls,
+                     residual_severity, residual_likelihood, residual_score,
+                     residual_level, action)
+                    VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
+                """, (assessment_id, cat, hazard_names[i], sev, lik,
+                      risk_score, risk_level, existing_controls_list[i], additional_controls_list[i],
+                      res_sev, res_lik, residual_score, residual_level, action))
 
             conn.commit()
+            log_action(session.get("username"), "CREATE_ASSESSMENT", "Assessment", reference, "Created new multi-hazard assessment")
+            
             cursor.close()
             conn.close()
 
@@ -435,7 +466,6 @@ def assessment_detail(assessment_id):
         conn = get_db_connection()
         if os.environ.get('DATABASE_URL'):
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            # SaaS SECURITY: Ensure it belongs to their org!
             cursor.execute("SELECT * FROM assessments WHERE id = %s AND organization = %s", (assessment_id, user_org))
             a_row = cursor.fetchone()
 
@@ -467,15 +497,12 @@ def assessment_detail(assessment_id):
 
 @app.route("/assessment/<int:assessment_id>/pdf")
 def assessment_pdf(assessment_id):
-    """Generate and download a PDF copy of one saved risk assessment."""
     if "username" not in session:
         return redirect(url_for("login"))
 
     user_org = session.get("organization_name", "Unknown")
 
-    from io import BytesIO
     from html import escape
-    from flask import send_file
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import A4
@@ -492,7 +519,6 @@ def assessment_pdf(assessment_id):
 
         if is_postgres:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            # SaaS SECURITY: Ensure it belongs to their org!
             cursor.execute("SELECT * FROM assessments WHERE id = %s AND organization = %s", (assessment_id, user_org))
             assessment_row = cursor.fetchone()
             if assessment_row is None:
@@ -535,10 +561,8 @@ def assessment_pdf(assessment_id):
         )
 
         styles = getSampleStyleSheet()
-        # === BRAND COLORS RESTORED HERE ===
         navy = colors.HexColor("#0A1E3D") 
         gold = colors.HexColor("#C9A84C") 
-        light_gray = colors.HexColor("#F4F6F9")
 
         title_style = ParagraphStyle(
             "AlphaTitle", parent=styles["Heading1"],
@@ -655,9 +679,200 @@ def assessment_pdf(assessment_id):
         if conn is not None:
             conn.close()
 
+@app.route("/assessment/<int:assessment_id>/excel")
+def assessment_excel(assessment_id):
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        is_postgres = bool(os.environ.get("DATABASE_URL"))
+
+        if is_postgres:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT * FROM assessments WHERE id = %s AND organization = %s", (assessment_id, user_org))
+            assessment_row = cursor.fetchone()
+            if assessment_row is None:
+                return "Access Denied: This assessment belongs to another organization.", 403
+            assessment = dict(assessment_row)
+            cursor.execute("SELECT * FROM hazards WHERE assessment_id = %s ORDER BY id", (assessment_id,))
+            hazards = [dict(row) for row in cursor.fetchall()]
+            cursor.close()
+        else:
+            assessment_row = conn.execute("SELECT * FROM assessments WHERE id = ? AND organization = ?", (assessment_id, user_org)).fetchone()
+            if assessment_row is None:
+                return "Access Denied: This assessment belongs to another organization.", 403
+            assessment = dict(assessment_row)
+            hazard_rows = conn.execute("SELECT * FROM hazards WHERE assessment_id = ? ORDER BY id", (assessment_id,)).fetchall()
+            hazards = [dict(row) for row in hazard_rows]
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Risk Assessment"
+
+        navy_fill = PatternFill(start_color="0A1E3D", end_color="0A1E3D", fill_type="solid")
+        gold_font = Font(color="C9A84C", bold=True)
+        bold_font = Font(bold=True)
+        wrap_alignment = Alignment(wrap_text=True, vertical="top")
+
+        ws.append(["ALPHA HSE RISK ASSESSMENT"])
+        ws["A1"].font = Font(size=16, bold=True, color="C9A84C")
+        ws.append([])
+        
+        info = [
+            ("Reference:", assessment.get("reference")),
+            ("Organization:", assessment.get("organization")),
+            ("Department:", assessment.get("department")),
+            ("Location / Site:", assessment.get("location")),
+            ("Assessor:", assessment.get("assessor")),
+            ("Project:", assessment.get("project")),
+            ("Date:", assessment.get("date_created")),
+        ]
+        for key, val in info:
+            ws.append([key, val])
+            ws.cell(row=ws.max_row, column=1).font = bold_font
+
+        ws.append([]) 
+
+        headers = ["Category", "Hazard Name", "Severity", "Likelihood", "Initial Score", "Initial Level", 
+                   "Existing Controls", "Additional Controls", "Res. Severity", "Res. Likelihood", 
+                   "Residual Score", "Residual Level", "Action"]
+        ws.append(headers)
+        
+        header_row = ws.max_row
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=header_row, column=col)
+            cell.fill = navy_fill
+            cell.font = gold_font
+            cell.alignment = Alignment(horizontal="center")
+
+        for h in hazards:
+            ws.append([
+                h.get("category"), h.get("name"), h.get("severity"), h.get("likelihood"),
+                h.get("risk_score"), h.get("risk_level"), h.get("existing_controls"), h.get("additional_controls"),
+                h.get("residual_severity"), h.get("residual_likelihood"), h.get("residual_score"),
+                h.get("residual_level"), h.get("action")
+            ])
+            current_row = ws.max_row
+            for col in range(1, len(headers) + 1):
+                ws.cell(row=current_row, column=col).alignment = wrap_alignment
+
+        for col in ws.columns:
+            max_length = 0
+            column = col[0].column_letter
+            for cell in col:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 40)
+            ws.column_dimensions[column].width = adjusted_width
+
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        filename_ref = str(assessment.get("reference") or f"assessment-{assessment_id}")
+        filename_ref = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in filename_ref)
+        filename = f"{filename_ref or f'assessment-{assessment_id}'}.xlsx"
+        
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    except Exception as e:
+        app.logger.exception("Excel generation failed for assessment %s", assessment_id)
+        return f"Excel generation failed. Please check the application log. ({type(e).__name__})", 500
+    finally:
+        if conn is not None:
+            conn.close()
+
 # ============================================
 # ADMIN DASHBOARD ROUTES
 # ============================================
+
+@app.route("/admin/create_user", methods=["POST"])
+def admin_create_user():
+    if "username" not in session or session.get("role_id") not in (3, 4):
+        return "Access Denied", 403
+
+    username = request.form.get("username", "").strip()
+    full_name = request.form.get("full_name", "").strip()
+    email = request.form.get("email", "").strip()
+    role_id = request.form.get("role_id")
+    password = request.form.get("password", "")
+    
+    organization_name = request.form.get("organization_name", "").strip()
+    if not organization_name:
+        organization_name = session.get("organization_name", "Unknown")
+
+    if username and password and full_name:
+        iterations = 29000
+        salt = os.urandom(16)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        password_hash = f"pbkdf2_sha256${iterations}${salt.hex()}${dk.hex()}"
+
+        try:
+            conn = get_db_connection()
+            is_postgres = os.environ.get('DATABASE_URL') is not None
+            q = "%s" if is_postgres else "?"
+            
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                INSERT INTO users (username, full_name, email, role_id, organization_name, is_active, password_hash)
+                VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q})
+            """, (username, full_name, email, role_id, organization_name, 1, password_hash))
+            
+            conn.commit()
+            log_action(session.get("username"), "CREATE_USER", "User", username, f"Created new user in {organization_name}")
+            cursor.close()
+            conn.close()
+            
+        except Exception as e:
+            print(f"Error creating user: {e}")
+
+    return redirect(url_for("admin_panel"))
+
+@app.route("/admin/audit")
+def admin_audit():
+    if "username" not in session or session.get("role_id") not in (3, 4):
+        return "Access Denied", 403
+
+    user_org = session.get("organization_name")
+    logs = []
+    
+    try:
+        conn = get_db_connection()
+        if os.environ.get('DATABASE_URL'):
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("""
+                SELECT a.* FROM audit_log a
+                JOIN users u ON a.username = u.username
+                WHERE u.organization_name = %s
+                ORDER BY a.id DESC LIMIT 100
+            """, (user_org,))
+            logs = cursor.fetchall()
+        else:
+            conn.row_factory = sqlite3.Row
+            logs_raw = conn.execute("""
+                SELECT a.* FROM audit_log a
+                JOIN users u ON a.username = u.username
+                WHERE u.organization_name = ?
+                ORDER BY a.id DESC LIMIT 100
+            """, (user_org,)).fetchall()
+            logs = [dict(r) for r in logs_raw]
+        conn.close()
+    except Exception as e:
+        print("Audit DB error:", e)
+
+    return render_template("audit.html", active="admin", logs=logs)
 
 @app.route("/admin")
 def admin_panel():
@@ -674,12 +889,10 @@ def admin_panel():
         conn = get_db_connection()
         if os.environ.get('DATABASE_URL'):
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            # SaaS SECURITY: Only show users from the Admin's own organization
             cursor.execute("SELECT username, full_name, organization_name, is_active, role_id FROM users WHERE organization_name = %s ORDER BY id", (user_org,))
             users = cursor.fetchall()
         else:
             conn.row_factory = sqlite3.Row
-            # SaaS SECURITY: Same for SQLite
             rows = conn.execute("SELECT username, full_name, organization_name, is_active, role_id FROM users WHERE organization_name = ? ORDER BY id", (user_org,)).fetchall()
             users = [dict(r) for r in rows]
         conn.close()
@@ -705,7 +918,6 @@ def toggle_user_status(username):
         
         cursor = conn.cursor()
         
-        # SaaS SECURITY: Check if the user exists AND belongs to the Admin's organization
         cursor.execute(f"SELECT is_active FROM users WHERE username = {q} AND organization_name = {q}", (username, user_org))
         row = cursor.fetchone()
         
@@ -713,9 +925,9 @@ def toggle_user_status(username):
             current_status = row[0]
             new_status = 0 if current_status == 1 else 1
             
-            # SaaS SECURITY: Update only if they belong to the same org
             cursor.execute(f"UPDATE users SET is_active = {q} WHERE username = {q} AND organization_name = {q}", (new_status, username, user_org))
             conn.commit()
+            log_action(session.get("username"), "TOGGLE_USER", "User", username, f"Changed active status to {new_status}")
             
         cursor.close()
         conn.close()

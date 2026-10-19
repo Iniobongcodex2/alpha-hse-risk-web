@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log - ALPHA HSE RISK{% endblock %}
+{% block header_title %}Audit Log{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <h2 style="font-size:16px; color:#0F1E3D; margin-bottom:6px;">
+        System Administration
+    </h2>
+    <p style="color:#6B7280; font-size:14px; margin-bottom: 20px;">Manage users, roles, and analytics.</p>
+
+    <!-- SUB-NAVIGATION BAR -->
+    <div style="display:flex; gap:10px; margin-bottom: 20px; border-bottom: 1px solid #E5E7EB; padding-bottom: 15px;">
+        <a href="/admin" style="color:#4B5563; text-decoration:none; font-weight:bold; padding: 8px 12px; border-radius: 6px;">
+            👥 Manage Users
+        </a>
+        <a href="/admin/audit" style="color:#0A1E3D; text-decoration:none; font-weight:bold; padding: 8px 12px; border-radius: 6px; background: #E2E8F0;">
+            📋 Audit Log
+        </a>
+    </div>
+
+    <h3 style="color:#0F1E3D; margin-bottom: 10px; font-size: 15px;">System Activity</h3>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+                <tr style="background: #0A1E3D; color: #C9A84C; text-align: left;">
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Date / Time</th>
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">User</th>
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Action</th>
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr style="border-bottom: 1px solid #E5E7EB; background: #FFFFFF;">
+                    <td style="padding: 10px; color: #6B7280; font-size: 11px;">{{ log.timestamp }}</td>
+                    <td style="padding: 10px; font-weight: bold; color: #0A1E3D;">{{ log.username }}</td>
+                    <td style="padding: 10px;">
+                        {% if log.action == 'LOGIN' %}
+                            <span style="color: #0284C7; font-weight: bold;">🔑 Login</span>
+                        {% elif log.action == 'CREATE_USER' %}
+                            <span style="color: #059669; font-weight: bold;">👤 Create User</span>
+                        {% elif log.action == 'CREATE_ASSESSMENT' %}
+                            <span style="color: #D97706; font-weight: bold;">📝 New Assessment</span>
+                        {% elif log.action == 'TOGGLE_USER' %}
+                            <span style="color: #DC2626; font-weight: bold;">⚙️ User Status</span>
+                        {% else %}
+                            {{ log.action }}
+                        {% endif %}
+                    </td>
+                    <td style="padding: 10px; color: #4B5563;">{{ log.details }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" style="padding: 15px; text-align: center; color: #6B7280;">No activity recorded yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

@@ -3,3 +3,4 @@ reportlab==4.0.9
 gunicorn==21.2.0
 psycopg2-binary
 Flask-SQLAlchemy
+openpyxl

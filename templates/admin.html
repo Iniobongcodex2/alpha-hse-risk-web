@@ -11,9 +11,76 @@
     </h2>
     <p style="color:#6B7280; font-size:14px; margin-bottom: 20px;">Manage users, roles, and analytics.</p>
     
+    <!-- SUB-NAVIGATION BAR -->
+    <div style="display:flex; gap:10px; margin-bottom: 20px; border-bottom: 1px solid #E5E7EB; padding-bottom: 15px;">
+        <a href="/admin" style="color:#0A1E3D; text-decoration:none; font-weight:bold; padding: 8px 12px; border-radius: 6px; background: #E2E8F0;">
+            👥 Manage Users
+        </a>
+        <a href="/admin/audit" style="color:#4B5563; text-decoration:none; font-weight:bold; padding: 8px 12px; border-radius: 6px;">
+            📋 Audit Log
+        </a>
+    </div>
+
     <div style="background:#E0F2FE; border-left:4px solid #0284C7; padding: 12px; border-radius: 4px; margin-bottom: 20px;">
         <p style="font-size:12px; color:#075985; margin-bottom:4px; font-weight: bold;">Web App Status</p>
         <p style="font-size:16px; color:#075985; font-weight:bold;">✅ Cloud Database Synced</p>
+    </div>
+
+    <!-- CREATE NEW USER FORM -->
+    <div class="card" style="margin-bottom: 25px; background: #F8FAFC; border: 1px solid #E2E8F0;">
+        <h3 style="color:#0A1E3D; margin-bottom: 15px; font-size: 15px;">Add New User</h3>
+        
+        {% if error %}
+            <p style="color: #DC2626; font-size: 13px; font-weight: bold; margin-bottom: 10px;">{{ error }}</p>
+        {% endif %}
+        {% if success %}
+            <p style="color: #059669; font-size: 13px; font-weight: bold; margin-bottom: 10px;">{{ success }}</p>
+        {% endif %}
+
+        <form method="POST" action="/admin/create_user">
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <div style="flex:1;">
+                    <label style="font-size:12px; color:#6B7280; font-weight:600;">Username</label>
+                    <input type="text" name="username" required style="width:100%; padding:10px; border:1px solid #CBD5E1; border-radius:6px;">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:12px; color:#6B7280; font-weight:600;">Full Name</label>
+                    <input type="text" name="full_name" required style="width:100%; padding:10px; border:1px solid #CBD5E1; border-radius:6px;">
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <div style="flex:1;">
+                    <label style="font-size:12px; color:#6B7280; font-weight:600;">Email</label>
+                    <input type="email" name="email" required style="width:100%; padding:10px; border:1px solid #CBD5E1; border-radius:6px;">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:12px; color:#6B7280; font-weight:600;">Role</label>
+                    <select name="role_id" required style="width:100%; padding:10px; border:1px solid #CBD5E1; border-radius:6px; background:#fff;">
+                        <option value="1">HSE Officer</option>
+                        <option value="2">HSE Supervisor</option>
+                        <option value="3">HSE Manager</option>
+                        <option value="4">Administrator</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-bottom:10px;">
+                <label style="font-size:12px; color:#6B7280; font-weight:600;">Organization (Company)</label>
+                <input type="text" name="organization_name" value="{{ session.get('organization_name', '') }}" required
+                       style="width:100%; padding:10px; border:1px solid #CBD5E1; border-radius:6px;" 
+                       placeholder="Enter organization name">
+            </div>
+
+            <div style="margin-bottom:15px;">
+                <label style="font-size:12px; color:#6B7280; font-weight:600;">Temporary Password</label>
+                <input type="text" name="password" required minlength="6" style="width:100%; padding:10px; border:1px solid #CBD5E1; border-radius:6px;" placeholder="Give them a secure password">
+            </div>
+
+            <button type="submit" style="background:#0A1E3D; color:#C9A84C; border:none; padding:10px 15px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%;">
+                + Create User
+            </button>
+        </form>
     </div>
 
     <h3 style="color:#0F1E3D; margin-bottom: 10px; font-size: 15px;">Registered Users</h3>
@@ -25,7 +92,7 @@
                     <th style="padding: 10px; border: 1px solid #E5E7EB;">Full Name</th>
                     <th style="padding: 10px; border: 1px solid #E5E7EB;">Organization</th>
                     <th style="padding: 10px; border: 1px solid #E5E7EB;">Status</th>
-                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Action</th> <!-- NEW COLUMN -->
+                    <th style="padding: 10px; border: 1px solid #E5E7EB;">Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -42,7 +109,6 @@
                         {% endif %}
                     </td>
                     <td style="padding: 10px;">
-                        <!-- NEW ACTION BUTTON -->
                         <form method="POST" action="/admin/toggle_user/{{ user.username }}" style="margin:0;">
                             {% if user.is_active %}
                                 <button type="submit" style="background:#FEE2E2; color:#DC2626; border:1px solid #FCA5A5; padding: 4px 8px; border-radius: 4px; font-weight:bold; cursor:pointer;">Deactivate</button>

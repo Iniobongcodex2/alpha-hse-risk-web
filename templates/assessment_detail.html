@@ -6,7 +6,7 @@
 
 <div class="card">
     <p style="font-size:12px; color:#6B7280;">Reference</p>
-    <p style="font-size:16px; color:#C9A961; font-weight:bold; margin-bottom:10px;">
+    <p style="font-size:16px; color:#C9A84C; font-weight:bold; margin-bottom:10px;">
         {{ assessment.reference }}
     </p>
 
@@ -45,7 +45,7 @@
 <div class="card" style="border-left:4px solid
     {% if h.residual_level == 'Critical' %}#8B0000
     {% elif h.residual_level == 'High' %}#D97706
-    {% elif h.residual_level == 'Medium' %}#C9A961
+    {% elif h.residual_level == 'Medium' %}#C9A84C
     {% else %}#4A7C59{% endif %};">
 
     <h3 style="font-size:14px; color:#0F1E3D; margin-bottom:10px;">
@@ -90,18 +90,27 @@
 </div>
 {% endfor %}
 
-<a href="/assessment/{{ assessment.id }}/pdf"
-   class="btn-primary btn-green"
-   style="display:block; margin-top:14px;">
-    📄 Download PDF
-</a>
+<!-- DOWNLOAD BUTTONS -->
+<div style="display:flex; flex-direction:column; gap:10px; margin-top:14px;">
+    <a href="/assessment/{{ assessment.id }}/pdf"
+       class="btn-primary btn-green"
+       style="display:block; text-align:center; text-decoration:none;">
+        📄 Download PDF
+    </a>
+    
+    <a href="/assessment/{{ assessment.id }}/excel"
+       class="btn-primary"
+       style="display:block; text-align:center; text-decoration:none; background:#1A4B8C; color:#FFFFFF;">
+        📊 Export to Excel
+    </a>
+</div>
 
 <button onclick="shareAssessment()"
-        style="display:block; margin-top:10px; width:100%; background:#C9A961; color:#0F1E3D; border:none; padding:16px; border-radius:10px; font-size:16px; font-weight:bold; min-height:54px; cursor:pointer;">
+        style="display:block; margin-top:10px; width:100%; background:#C9A84C; color:#0F1E3D; border:none; padding:16px; border-radius:10px; font-size:16px; font-weight:bold; min-height:54px; cursor:pointer;">
     📤 Share
 </button>
 
-<a href="/history" class="btn-primary" style="display:block; margin-top:14px; background:#0F1E3D; color:#C9A961;">
+<a href="/history" class="btn-primary" style="display:block; margin-top:14px; background:#0F1E3D; color:#C9A84C; text-align:center; text-decoration:none;">
     ← Back to History
 </a>
 

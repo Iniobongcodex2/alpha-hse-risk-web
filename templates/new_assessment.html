@@ -4,16 +4,13 @@
 
 {% block content %}
 
-<form method="POST" action="/new">
+<form method="POST" action="/new" id="assessment-form">
 
+    <!-- ASSESSMENT DETAILS -->
     <div class="card">
         <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Assessment Details</h2>
 
-        <!-- NEW: Hidden field locks the organization to the user's profile -->
-        <input type="hidden" name="organization" value="{{ session.get('organization_name', 'Unknown') }}">
-
         <label style="font-size:13px; color:#6B7280; font-weight:600;">Organization</label>
-        <!-- NEW: Read-only display so they see what company they are logged in as -->
         <input type="text" value="{{ session.get('organization_name', 'Unknown') }}" readonly
                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#F3F4F6; color:#6B7280; cursor:not-allowed;">
 
@@ -30,150 +27,161 @@
                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
     </div>
 
-    <div class="card">
-        <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Hazard</h2>
+    <!-- HAZARDS CONTAINER -->
+    <div id="hazards-container">
+        <!-- Hazard 1 (Default) -->
+        <div class="card hazard-block">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <h2 style="font-size:15px; color:#0F1E3D;">Hazard <span class="hazard-number">1</span></h2>
+            </div>
 
-        <label style="font-size:13px; color:#6B7280; font-weight:600;">Category</label>
-        <select name="category" required
-                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
-            <option value="Occupational Health">Occupational Health</option>
-            <option value="Working at Height">Working at Height</option>
-            <option value="Slips and Trips">Slips and Trips</option>
-            <option value="Lone Working">Lone Working</option>
-            <option value="Ergonomics">Ergonomics</option>
-            <option value="Hazardous Substances">Hazardous Substances</option>
-            <option value="Confined Spaces">Confined Spaces</option>
-            <option value="Manual Handling">Manual Handling</option>
-            <option value="Work Environment">Work Environment</option>
-            <option value="Work Equipment and Machinery">Work Equipment and Machinery</option>
-        </select>
+            <label style="font-size:13px; color:#6B7280; font-weight:600;">Category</label>
+            <select name="category[]" required class="category-select" onchange="toggleCustomCategory(this)"
+                    style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+                <option value="Occupational Health">Occupational Health</option>
+                <option value="Working at Height">Working at Height</option>
+                <option value="Slips, Trips and Falls">Slips, Trips and Falls</option>
+                <option value="Lone Working">Lone Working</option>
+                <option value="Ergonomics">Ergonomics</option>
+                <option value="Hazardous Substances">Hazardous Substances</option>
+                <option value="Confined Spaces">Confined Spaces</option>
+                <option value="Manual Handling">Manual Handling</option>
+                <option value="Work Environment">Work Environment</option>
+                <option value="Work Equipment and Machinery">Work Equipment and Machinery</option>
+                <option value="Electrical Safety">Electrical Safety</option>
+                <option value="Fire Safety">Fire Safety</option>
+                <option value="First Aid">First Aid</option>
+                <option value="Excavation and Trenching">Excavation and Trenching</option>
+                <option value="Lifting Operations">Lifting Operations</option>
+                <option value="Noise and Vibration">Noise and Vibration</option>
+                <option value="Dust and Fumes">Dust and Fumes</option>
+                <option value="Driving and Transport">Driving and Transport</option>
+                <option value="Environmental Spills">Environmental Spills</option>
+                <option value="Public Safety">Public Safety</option>
+                <option value="Violence and Harassment">Violence and Harassment</option>
+                <option value="Custom">Other (Please specify)</option>
+            </select>
 
-        <label style="font-size:13px; color:#6B7280; font-weight:600;">Hazard Name</label>
-        <input type="text" name="hazard_name" placeholder="Enter hazard" required
-               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
-
-        <div style="display:flex; gap:10px;">
-            <div style="flex:1;">
-                <label style="font-size:13px; color:#6B7280; font-weight:600;">Severity (1-5)</label>
-                <input type="number" name="severity" min="1" max="5" placeholder="1-5" required
+            <div class="custom-category-div" style="display: none;">
+                <label style="font-size:13px; color:#6B7280; font-weight:600;">Custom Category Name</label>
+                <input type="text" name="custom_category[]" class="custom-category-input" placeholder="Enter custom hazard category"
                        style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
             </div>
-            <div style="flex:1;">
-                <label style="font-size:13px; color:#6B7280; font-weight:600;">Likelihood (1-5)</label>
-                <input type="number" name="likelihood" min="1" max="5" placeholder="1-5" required
-                       style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+            <label style="font-size:13px; color:#6B7280; font-weight:600;">Hazard Name</label>
+            <input type="text" name="hazard_name[]" placeholder="Enter hazard" required
+                   style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1;">
+                    <label style="font-size:13px; color:#6B7280; font-weight:600;">Severity (1-5)</label>
+                    <input type="number" name="severity[]" min="1" max="5" placeholder="1-5" required
+                           style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:13px; color:#6B7280; font-weight:600;">Likelihood (1-5)</label>
+                    <input type="number" name="likelihood[]" min="1" max="5" placeholder="1-5" required
+                           style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+                </div>
+            </div>
+
+            <label style="font-size:13px; color:#6B7280; font-weight:600;">Existing Controls</label>
+            <textarea name="existing_controls[]" placeholder="What controls exist already?"
+                      style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:80px;"></textarea>
+
+            <label style="font-size:13px; color:#6B7280; font-weight:600;">Additional Controls</label>
+            <textarea name="additional_controls[]" placeholder="What more is required?"
+                      style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:80px;"></textarea>
+
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1;">
+                    <label style="font-size:13px; color:#6B7280; font-weight:600;">Residual Severity</label>
+                    <input type="number" name="residual_severity[]" min="1" max="5" placeholder="1-5" required
+                           style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:13px; color:#6B7280; font-weight:600;">Residual Likelihood</label>
+                    <input type="number" name="residual_likelihood[]" min="1" max="5" placeholder="1-5" required
+                           style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+                </div>
             </div>
         </div>
-
-        <label style="font-size:13px; color:#6B7280; font-weight:600;">Existing Controls</label>
-        <textarea name="existing_controls" placeholder="What controls exist already?"
-                  style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:80px;"></textarea>
-
-        <label style="font-size:13px; color:#6B7280; font-weight:600;">Additional Controls</label>
-        <textarea name="additional_controls" placeholder="What more is required?"
-                  style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:80px;"></textarea>
     </div>
 
-    <div class="card">
-        <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Residual Risk</h2>
-
-        <div style="display:flex; gap:10px;">
-            <div style="flex:1;">
-                <label style="font-size:13px; color:#6B7280; font-weight:600;">Residual Severity</label>
-                <input type="number" name="residual_severity" min="1" max="5" placeholder="1-5" required
-                       style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
-            </div>
-            <div style="flex:1;">
-                <label style="font-size:13px; color:#6B7280; font-weight:600;">Residual Likelihood</label>
-                <input type="number" name="residual_likelihood" min="1" max="5" placeholder="1-5" required
-                       style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
-            </div>
-        </div>
+    <!-- BUTTONS -->
+    <div style="display:flex; gap:10px; margin-top:10px; margin-bottom: 20px;">
+        <button type="button" onclick="addHazard()" class="btn-primary" style="background:#1A4B8C; color:#FFFFFF; flex:1;">
+            ➕ Add Another Hazard
+        </button>
+        <button type="submit" class="btn-primary btn-green" style="flex:1;">
+            💾 Save Assessment
+        </button>
     </div>
-
-    <button type="submit" class="btn-primary btn-green" style="margin-top:10px;">
-        💾 Save Assessment
-    </button>
 
 </form>
 
-<!-- ============================================
-     OFFLINE SAVE HANDLER
-     ============================================ -->
-<div id="offline-banner" style="
-    display: none;
-    position: fixed;
-    top: 60px;
-    left: 0;
-    right: 0;
-    background: #FEF3C7;
-    color: #92400E;
-    padding: 10px 16px;
-    font-size: 13px;
-    font-weight: 600;
-    text-align: center;
-    z-index: 99;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-">
-    ⚠️ You're offline — your assessment will be saved on this phone
-</div>
-
 <script>
-    // ---- Show banner if offline ----
-    function updateOnlineStatus() {
-        const banner = document.getElementById('offline-banner');
-        if (!navigator.onLine) {
-            banner.style.display = 'block';
+    // ---- Custom Category Logic ----
+    function toggleCustomCategory(selectElement) {
+        const parentBlock = selectElement.closest('.hazard-block');
+        const customDiv = parentBlock.querySelector('.custom-category-div');
+        const customInput = parentBlock.querySelector('.custom-category-input');
+
+        if (selectElement.value === 'Custom') {
+            customDiv.style.display = 'block';
+            customInput.required = true;
         } else {
-            banner.style.display = 'none';
+            customDiv.style.display = 'none';
+            customInput.required = false;
+            customInput.value = '';
         }
     }
 
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
-    updateOnlineStatus();
-
-    // ---- Intercept the form submission ----
-    document.addEventListener('DOMContentLoaded', function() {
-        const form = document.querySelector('form');
-        if (!form) return;
-
-        form.addEventListener('submit', function(event) {
-            if (navigator.onLine) {
-                return; // online → let it submit normally
-            }
-
-            // ---- OFFLINE: save to localStorage ----
-            event.preventDefault();
-
-            const formData = new FormData(form);
-            const assessment = {};
-            formData.forEach((value, key) => {
-                assessment[key] = value;
-            });
-            assessment['saved_at'] = new Date().toISOString();
-
-            // Load existing queue
-            let queue = [];
-            try {
-                queue = JSON.parse(localStorage.getItem('alpha_pending_assessments') || '[]');
-            } catch (e) {
-                queue = [];
-            }
-
-            queue.push(assessment);
-            localStorage.setItem('alpha_pending_assessments', JSON.stringify(queue));
-
-            // Show confirmation
-            alert(
-                '✓ Saved on this phone\n\n' +
-                'Pending assessments: ' + queue.length + '\n\n' +
-                'This will sync automatically when you\'re back online.'
-            );
-
-            form.reset();
+    // ---- Add Hazard Logic ----
+    function addHazard() {
+        const container = document.getElementById('hazards-container');
+        const firstBlock = container.querySelector('.hazard-block');
+        
+        // Clone the first block
+        const newBlock = firstBlock.cloneNode(true);
+        
+        // Clear the input values in the new block
+        newBlock.querySelectorAll('input, textarea, select').forEach(input => {
+            if (input.type !== 'number') input.value = '';
+            input.value = '';
         });
-    });
+
+        // Reset the dropdown to the first option
+        newBlock.querySelector('.category-select').selectedIndex = 0;
+        newBlock.querySelector('.custom-category-div').style.display = 'none';
+
+        // Update the Hazard Number title
+        const numHazards = container.querySelectorAll('.hazard-block').length;
+        newBlock.querySelector('.hazard-number').textContent = numHazards + 1;
+
+        // Add a "Remove" button to the cloned block
+        const headerDiv = newBlock.querySelector('div[style*="justify-content:space-between"]');
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = '❌ Remove';
+        removeBtn.style = 'background:none; border:none; color:#DC2626; font-weight:bold; cursor:pointer;';
+        removeBtn.onclick = function() {
+            newBlock.remove();
+            renumberHazards();
+        };
+        headerDiv.appendChild(removeBtn);
+
+        // Add the new block to the container
+        container.appendChild(newBlock);
+    }
+
+    // ---- Renumber Hazards after removing one ----
+    function renumberHazards() {
+        const blocks = document.querySelectorAll('.hazard-block');
+        blocks.forEach((block, index) => {
+            block.querySelector('.hazard-number').textContent = index + 1;
+        });
+    }
 </script>
 
 {% endblock %}

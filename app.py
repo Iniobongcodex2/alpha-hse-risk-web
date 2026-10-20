@@ -1082,37 +1082,5 @@ def service_worker():
     response.headers['Content-Type'] = 'application/javascript'
     response.headers['Service-Worker-Allowed'] = '/'
     return response
-
-@app.route("/diagnose-login")
-def diagnose_login():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = os.environ.get('DATABASE_URL') is not None
-        q = "%s" if is_postgres else "?"
-
-        # 1. Fetch ALL users (ignoring the SaaS wall for a moment)
-        cursor.execute("SELECT username, organization_name, role_id, is_active FROM users")
-        users = cursor.fetchall()
-
-        # 2. Force reset the password for ANY user with "Iniobong" in the name
-        new_password = "Alpha1234!"
-        salt = os.urandom(16)
-        dk = hashlib.pbkdf2_hmac("sha256", new_password.encode("utf-8"), salt, 29000)
-        password_hash = f"pbkdf2_sha256$29000${salt.hex()}${dk.hex()}"
-        
-        cursor.execute(f"UPDATE users SET password_hash = {q}, is_active = 1 WHERE username LIKE {q}", (password_hash, '%Iniobong%'))
-        conn.commit()
-
-        html = "<h2>Users in Database:</h2><ul>"
-        for u in users:
-            html += f"<li>Username: <b>'{u[0]}'</b> | Org: {u[1]} | Role: {u[2]} | Active: {u[3]}</li>"
-        html += "</ul><br>"
-        html += "<h3>Password for any user containing 'Iniobong' has been reset to: <span style='color:red'>Alpha1234!</span></h3>"
-        html += "<p>Look at the list above. Copy the exact username (watch out for spaces) and try logging in with Alpha1234!</p>"
-        return html
-    except Exception as e:
-        return f"Error: {e}"
-
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)

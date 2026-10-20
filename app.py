@@ -1068,26 +1068,6 @@ def service_worker():
     response.headers['Content-Type'] = 'application/javascript'
     response.headers['Service-Worker-Allowed'] = '/'
     return response
-@app.route("/rescue-admin")
-def rescue_admin():
-    import hashlib, os
-    new_password = "Alpha1234!" 
-    salt = os.urandom(16)
-    dk = hashlib.pbkdf2_hmac("sha256", new_password.encode("utf-8"), salt, 29000)
-    password_hash = f"pbkdf2_sha256$29000${salt.hex()}${dk.hex()}"
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = os.environ.get('DATABASE_URL') is not None
-        q = "%s" if is_postgres else "?"
-        
-        cursor.execute(f"UPDATE users SET password_hash = {q} WHERE username = {q}", (password_hash, "Iniobong"))
-        conn.commit()
-        cursor.close()
-        conn.close()
-        return "<h1>Success! Password for 'Iniobong' is now: <span style='color:red'>Alpha1234!</span></h1>"
-    except Exception as e:
-        return f"Error: {e}"
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)

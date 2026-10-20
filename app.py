@@ -1084,27 +1084,3 @@ def service_worker():
     return response
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)
-
-@app.route("/diagnose-assessments")
-def diagnose_assessments():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Fetch ALL assessments regardless of organization
-        cursor.execute("SELECT reference, organization, project, date_created FROM assessments ORDER BY id DESC")
-        assessments = cursor.fetchall()
-        
-        cursor.close()
-        conn.close()
-        
-        html = "<h2>All Assessments in Database:</h2><ul>"
-        if not assessments:
-            html += "<li>No assessments found in the entire database.</li>"
-        else:
-            for a in assessments:
-                html += f"<li>Ref: <b>{a[0]}</b> | Org: <b>{a[1]}</b> | Project: {a[2]} | Date: {a[3]}</li>"
-        html += "</ul>"
-        return html
-    except Exception as e:
-        return f"Error: {e}"    

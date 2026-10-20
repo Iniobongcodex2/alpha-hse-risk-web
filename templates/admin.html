@@ -118,6 +118,11 @@
                             {% endif %}
                         </form>
 
+                        <!-- Reset Password Form (THE NEW BUTTON) -->
+                        <form method="POST" action="/admin/reset_password/{{ user.username }}" style="margin:0;" onsubmit="return confirm('Reset password for {{ user.username }} to the default: Password123! ?');">
+                            <button type="submit" style="background:#F59E0B; color:#FFFFFF; border:none; padding: 5px 8px; border-radius: 4px; font-weight:bold; cursor:pointer;">Reset Pass</button>
+                        </form>
+
                         <!-- Delete User Form -->
                         <form method="POST" action="/admin/delete_user/{{ user.username }}" style="margin:0;" onsubmit="return confirm('Are you sure you want to permanently delete {{ user.username }}? This cannot be undone.');">
                             <button type="submit" style="background:#DC2626; color:#FFFFFF; border:none; padding: 5px 8px; border-radius: 4px; font-weight:bold; cursor:pointer;">Delete</button>

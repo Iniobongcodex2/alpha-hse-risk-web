@@ -889,6 +889,38 @@ def admin_create_user():
 
     return redirect(url_for("admin_panel"))
 
+@app.route("/admin/delete_user/<username>", methods=["POST"])
+def delete_user(username):
+    if "username" not in session or session.get("role_id") not in (3, 4):
+        return "Access Denied", 403
+
+    if username == session.get("username"):
+        return "You cannot delete your own account.", 400
+
+    user_org = session.get("organization_name")
+
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor = conn.cursor()
+        
+        # Delete only if they belong to the same organization
+        cursor.execute(f"DELETE FROM users WHERE username = {q} AND organization_name = {q}", (username, user_org))
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        # Log the action
+        log_action(session.get("username"), "DELETE_USER", "User", username, f"Deleted user {username}")
+        
+    except Exception as e:
+        print("Delete user error:", e)
+
+    return redirect(url_for("admin_panel"))
+
 @app.route("/admin/audit")
 def admin_audit():
     if "username" not in session or session.get("role_id") not in (3, 4):
@@ -1008,36 +1040,5 @@ def service_worker():
     response.headers['Service-Worker-Allowed'] = '/'
     return response
 
-@app.route("/fix-org-data")
-def fix_org_data():
-    if "username" not in session:
-        return redirect(url_for("login"))
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = os.environ.get('DATABASE_URL') is not None
-        q = "%s" if is_postgres else "?"
-        
-        # This grabs the organization name of the logged-in user (Shell oil)
-        user_org = session.get("organization_name")
-        
-        # Updates ALL old assessments to belong to this organization
-        cursor.execute(f"UPDATE assessments SET organization = {q}", (user_org,))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return f"""
-        <div style="text-align:center; padding:50px; font-family:sans-serif;">
-            <h1 style="color:green;">✅ Success!</h1>
-            <p>All your old assessments have been successfully moved to <strong>{user_org}</strong>.</p>
-            <a href="/dashboard" style="background:#0A1E3D; color:#C9A84C; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;">Go to Dashboard</a>
-        </div>
-        """
-    except Exception as e:
-        return f"Error updating data: {e}"
-    
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)

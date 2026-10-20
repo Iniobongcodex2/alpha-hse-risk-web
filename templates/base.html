@@ -18,6 +18,7 @@
             padding: 0;
             box-sizing: border-box;
             -webkit-tap-highlight-color: transparent;
+            transition: background-color 0.3s, color 0.3s; /* Smooth transition for dark mode */
         }
 
         body {
@@ -47,6 +48,17 @@
             font-size: 18px;
             font-weight: bold;
             letter-spacing: 0.5px;
+        }
+        
+        /* Toggle Button */
+        .theme-toggle {
+            position: absolute;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #C9A961;
         }
 
         /* ---- CONTENT AREA ---- */
@@ -127,18 +139,58 @@
             background: #4A7C59;
             color: #FFFFFF;
         }
+
+        /* ========================================= */
+        /* ---- DARK MODE THEME ---- */
+        /* ========================================= */
+        body.dark-mode {
+            background: #0A1E3D; /* Deep Navy */
+            color: #F3F4F6;
+        }
+        body.dark-mode .app-header {
+            background: #051024; /* Darker Navy */
+        }
+        body.dark-mode .app-nav {
+            background: #1A4B8C;
+            border-top: 1px solid #0A1E3D;
+        }
+        body.dark-mode .app-nav a {
+            color: #9CA3AF;
+        }
+        body.dark-mode .app-nav a.active {
+            color: #C9A961;
+        }
+        body.dark-mode .card {
+            background: #1A4B8C; /* Blue Cards */
+            color: #FFFFFF;
+        }
+        /* Fix headings and labels in dark mode */
+        body.dark-mode h2, body.dark-mode h3, body.dark-mode h4 {
+            color: #FFFFFF !important;
+        }
+        body.dark-mode p, body.dark-mode label {
+            color: #D1D5DB !important;
+        }
+        /* Fix inputs in dark mode */
+        body.dark-mode input, body.dark-mode select, body.dark-mode textarea {
+            background: #0A1E3D !important;
+            color: #FFFFFF !important;
+            border-color: #1A4B8C !important;
+        }
     </style>
 </head>
 <body>
 
     <div class="app-header">
         <h1>{% block header_title %}ALPHA HSE RISK{% endblock %}</h1>
+        <!-- DARK MODE TOGGLE BUTTON -->
+        <button class="theme-toggle" onclick="toggleDarkMode()" id="theme-btn">🌙</button>
     </div>
 
     <div class="app-content">
         {% block content %}{% endblock %}
         
-        <!-- NEW: Professional Footer & Tagline -->
+        <!-- Professional Footer & Tagline -->
         <div style="text-align: center; margin-top: 40px; margin-bottom: 20px; border-top: 1px solid #E5E7EB; padding-top: 20px;">
             <p style="font-size: 12px; color: #0F1E3D; font-weight: bold; margin-bottom: 4px;">
                 ALPHA HSE RISK v2.0 | Professional Risk Management System
@@ -177,7 +229,29 @@
         </a>
     </nav>
 
-    <!-- 1. Register Service Worker -->
+    <!-- 1. DARK MODE LOGIC -->
+    <script>
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            const btn = document.getElementById('theme-btn');
+            
+            if (document.body.classList.contains('dark-mode')) {
+                localStorage.setItem('theme', 'dark');
+                btn.textContent = '☀️'; // Sun icon for light mode
+            } else {
+                localStorage.setItem('theme', 'light');
+                btn.textContent = '🌙'; // Moon icon for dark mode
+            }
+        }
+
+        // Check saved theme on page load
+        if (localStorage.getItem('theme') === 'dark') {
+            document.body.classList.add('dark-mode');
+            document.getElementById('theme-btn').textContent = '☀️';
+        }
+    </script>
+
+    <!-- 2. Register Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -188,7 +262,7 @@
         }
     </script>
 
-    <!-- 2. Auto-sync pending assessments -->
+    <!-- 3. Auto-sync pending assessments -->
     <script>
         async function syncPendingAssessments() {
             if (!navigator.onLine) return;

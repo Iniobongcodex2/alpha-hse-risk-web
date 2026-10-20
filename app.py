@@ -906,14 +906,12 @@ def delete_user(username):
         
         cursor = conn.cursor()
         
-        # Delete only if they belong to the same organization
         cursor.execute(f"DELETE FROM users WHERE username = {q} AND organization_name = {q}", (username, user_org))
         conn.commit()
         
         cursor.close()
         conn.close()
         
-        # Log the action
         log_action(session.get("username"), "DELETE_USER", "User", username, f"Deleted user {username}")
         
     except Exception as e:
@@ -926,7 +924,6 @@ def admin_reset_password(username):
     if "username" not in session or session.get("role_id") not in (3, 4):
         return "Access Denied", 403
 
-    # The default password you want to give them
     default_password = "Password123!"
     
     try:
@@ -936,19 +933,16 @@ def admin_reset_password(username):
         
         cursor = conn.cursor()
         
-        # 1. Hash the default password
         salt = os.urandom(16)
         dk = hashlib.pbkdf2_hmac("sha256", default_password.encode("utf-8"), salt, 29000)
         password_hash = f"pbkdf2_sha256$29000${salt.hex()}${dk.hex()}"
         
-        # 2. Update the user
         cursor.execute(f"UPDATE users SET password_hash = {q} WHERE username = {q} AND organization_name = {q}", (password_hash, username, session.get("organization_name")))
         conn.commit()
         cursor.close()
         conn.close()
         
-        # 3. Log it
-        log_action(session.get("username"), "RESET_PASSWORD", "User", username, f"Reset password to default")
+        log_action(session.get("username"), "RESET_PASSWORD", "User", username, "Reset password to default")
         
     except Exception as e:
         print("Reset password error:", e)
@@ -1025,6 +1019,7 @@ def toggle_user_status(username):
         return "You cannot deactivate your own account.", 400
 
     user_org = session.get("organization_name")
+    new_status = 0
 
     try:
         conn = get_db_connection()
@@ -1052,39 +1047,7 @@ def toggle_user_status(username):
         print("Toggle user error:", e)
 
     return redirect(url_for("admin_panel"))
-@app.route("/admin/reset_password/<username>", methods=["POST"])
-def admin_reset_password(username):
-    if "username" not in session or session.get("role_id") not in (3, 4):
-        return "Access Denied", 403
 
-    # The default password you want to give them
-    default_password = "Password123!"
-    
-    try:
-        conn = get_db_connection()
-        is_postgres = os.environ.get('DATABASE_URL') is not None
-        q = "%s" if is_postgres else "?"
-        
-        cursor = conn.cursor()
-        
-        # 1. Hash the default password
-        salt = os.urandom(16)
-        dk = hashlib.pbkdf2_hmac("sha256", default_password.encode("utf-8"), salt, 29000)
-        password_hash = f"pbkdf2_sha256$29000${salt.hex()}${dk.hex()}"
-        
-        # 2. Update the user
-        cursor.execute(f"UPDATE users SET password_hash = {q} WHERE username = {q} AND organization_name = {q}", (password_hash, username, session.get("organization_name")))
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        # 3. Log it
-        log_action(session.get("username"), "RESET_PASSWORD", "User", username, f"Reset password to default")
-        
-    except Exception as e:
-        print("Reset password error:", e)
-
-    return redirect(url_for("admin_panel"))
 # ============================================
 
 @app.route("/profile")

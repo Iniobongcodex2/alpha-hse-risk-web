@@ -30,7 +30,11 @@ def get_db_connection():
         conn.autocommit = True
         return conn
     else:
-        # SQLite (Local)
+        # If we are on Render but DATABASE_URL is missing, crash instead of using SQLite!
+        if os.environ.get('RENDER'):
+            raise Exception("CRITICAL ERROR: DATABASE_URL is missing on Render. Refusing to fallback to SQLite to prevent data loss.")
+            
+        # SQLite (Local laptop testing only)
         data_folder = os.path.expanduser("~/Documents/ALPHA_HSE_DATA")
         if not os.path.exists(data_folder):
             os.makedirs(data_folder, exist_ok=True)
@@ -1085,40 +1089,6 @@ def service_worker():
     response.headers['Service-Worker-Allowed'] = '/'
     return response
 
-@app.route("/check-db")
-def check_db():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Count assessments
-        cursor.execute("SELECT COUNT(*) FROM assessments")
-        a_count = cursor.fetchone()[0]
-        
-        # Count hazards
-        cursor.execute("SELECT COUNT(*) FROM hazards")
-        h_count = cursor.fetchone()[0]
-        
-        # Get a list of the assessments
-        cursor.execute("SELECT reference, organization, project FROM assessments")
-        records = cursor.fetchall()
-        
-        cursor.close()
-        conn.close()
-        
-        html = f"<h2>Database X-Ray:</h2>"
-        html += f"<p>Total Assessments in Cloud: <b>{a_count}</b></p>"
-        html += f"<p>Total Hazards in Cloud: <b>{h_count}</b></p>"
-        html += "<h3>Records Found:</h3><ul>"
-        if records:
-            for r in records:
-                html += f"<li>{r[0]} | {r[1]} | {r[2]}</li>"
-        else:
-            html += "<li>No records found in the database at all.</li>"
-        html += "</ul>"
-        return html
-    except Exception as e:
-        return f"Error: {e}"
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)
 

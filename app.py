@@ -15,6 +15,7 @@ from flask import send_file
 
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key-later-2026"
+app.permanent_session_lifetime = datetime.timedelta(days=7) # <--- ADD THIS
 
 # ============================================
 # DATABASE CONNECTION (Postgres in cloud, SQLite local)
@@ -230,6 +231,7 @@ def login():
                 elif not verify_password(password, row["password_hash"]):
                     error = "Invalid username or password."
                 else:
+                    session.permanent = True 
                     session["username"] = row["username"]
                     session["full_name"] = row["full_name"] or row["username"]
                     session["role_id"] = row["role_id"]
@@ -1084,3 +1086,24 @@ def service_worker():
     return response
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)
+
+
+@app.route("/delete-old-test-account")
+def delete_old_test_account():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        # Delete God'stime and their old assessments
+        cursor.execute(f"DELETE FROM users WHERE username = {q}", ("God'stime",))
+        cursor.execute(f"DELETE FROM assessments WHERE organization IN ({q}, {q})", ("Shell oil", "skyrock"))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return "<h1>Success: Old test account and data permanently deleted from cloud database.</h1>"
+    except Exception as e:
+        return f"Error: {e}"
+    

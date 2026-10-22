@@ -1,3 +1,14 @@
+    <script>
+        // 1. Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.log('SW registration failed:', err));
+            });
+        }
+
+        // 2. The Offline Sync Function
         async function syncPendingAssessments() {
             if (!navigator.onLine) return;
 
@@ -19,7 +30,6 @@
                     let formData = new FormData();
                     for (let key in item) {
                         if (key !== 'saved_at') {
-                            // Rebuild the arrays correctly for multiple hazards
                             if (Array.isArray(item[key])) {
                                 item[key].forEach(val => formData.append(key, val));
                             } else {
@@ -33,7 +43,6 @@
                         body: formData
                     });
 
-                    // If the user logged out, save it back to the queue and stop.
                     if (response.redirected && response.url.includes('/login')) {
                         console.log('Session expired. Pausing sync.');
                         remaining.push(item);
@@ -60,3 +69,23 @@
                 }
             }
         }
+
+        // 3. Trigger the sync when the page loads
+        document.addEventListener('DOMContentLoaded', syncPendingAssessments);
+
+        // 4. Trigger the sync when the internet comes back online
+        window.addEventListener('online', () => {
+            console.log('Connection restored! Attempting sync...');
+            syncPendingAssessments();
+        });
+
+        // 5. Fallback check every 10 seconds
+        setInterval(() => {
+            if (navigator.onLine) {
+                syncPendingAssessments();
+            }
+        }, 10000);
+    </script>
+
+</body>
+</html>

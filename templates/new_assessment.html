@@ -219,6 +219,80 @@
             }
         }
     }
+
+    // ---- BULLETPROOF FORM SUBMISSION & OFFLINE SYNC ----
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        if (!form) return;
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault(); // Always stop default submission
+
+            const formData = new FormData(form);
+            const assessment = {};
+            
+            // Build the JSON object, preserving arrays for multiple hazards
+            formData.forEach((value, key) => {
+                if (!assessment[key]) {
+                    assessment[key] = [];
+                }
+                assessment[key].push(value);
+            });
+            assessment['saved_at'] = new Date().toISOString();
+
+            try {
+                // Try to send to the server
+                let response = await fetch('/new', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                // If session expired and we got redirected to login
+                if (response.redirected && response.url.includes('/login')) {
+                    alert("Your session expired. Please log in again.");
+                    window.location.href = '/login';
+                    return;
+                }
+
+                if (response.ok) {
+                    window.location.href = '/history'; // Success!
+                } else {
+                    throw new Error('Server returned an error');
+                }
+            } catch (error) {
+                // FALLBACK: If the fetch fails (offline, server asleep, etc.)
+                let queue = [];
+                try {
+                    queue = JSON.parse(localStorage.getItem('alpha_pending_assessments') || '[]');
+                } catch (e) {
+                    queue = [];
+                }
+
+                queue.push(assessment);
+                localStorage.setItem('alpha_pending_assessments', JSON.stringify(queue));
+
+                alert(
+                    '⚠️ Internet connection lost or server unreachable.\n\n' +
+                    'Your assessment has been saved securely on this phone.\n\n' +
+                    'It will sync automatically when you are back online.'
+                );
+
+                // Reset the form so they can enter another one
+                form.reset();
+                const container = document.getElementById('hazards-container');
+                const blocks = container.querySelectorAll('.hazard-block');
+                for (let i = 1; i < blocks.length; i++) { blocks[i].remove(); }
+                
+                const firstBlock = container.querySelector('.hazard-block');
+                if (firstBlock) {
+                    firstBlock.querySelectorAll('input, textarea').forEach(input => input.value = '');
+                    firstBlock.querySelector('.category-select').selectedIndex = 0;
+                    firstBlock.querySelector('.custom-category-div').style.display = 'none';
+                    firstBlock.querySelector('.hazard-number').textContent = '1';
+                }
+            }
+        });
+    });
 </script>
 
 {% endblock %}

@@ -2,7 +2,7 @@
 // ALPHA HSE RISK — Service Worker
 // Caches pages for offline use
 // ============================================
-const CACHE_NAME = 'alpha-hse-v1';
+const CACHE_NAME = 'alpha-hse-v2'; // <--- BUMPED TO V2 TO CLEAR BAD CACHE
 
 const URLS_TO_CACHE = [
   '/login',
@@ -41,10 +41,13 @@ self.addEventListener('fetch', event => {
   // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
-  // Skip PDFs — they need fresh server data
-  if (event.request.url.includes('/pdf')) return;
+  // Skip PDFs & Excel — they need fresh server data
+  if (event.request.url.includes('/pdf') || event.request.url.includes('/excel')) return;
 
-  // Skip non-origin requests (Anthropic API, etc.)
+  // Skip the service worker file itself to prevent caching loops
+  if (event.request.url.includes('/sw.js')) return;
+
+  // Skip non-origin requests
   if (!event.request.url.startsWith(self.location.origin)) return;
 
   event.respondWith(

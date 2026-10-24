@@ -181,6 +181,12 @@
             <span>History</span>
         </a>
         
+        <!-- NEW: Observations Tab -->
+        <a href="/observations" class="{% if active == 'observations' %}active{% endif %}">
+            <span class="nav-icon">📝</span>
+            <span>Observations</span>
+        </a>
+
         {% if session.get('role_id') == 3 or session.get('role_id') == 4 %}
         <a href="/admin" class="{% if active == 'admin' %}active{% endif %}">
             <span class="nav-icon">🛡️</span>

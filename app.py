@@ -175,6 +175,16 @@ def setup_database():
                 INSERT INTO users (username, full_name, email, role_id, organization_name, is_active, password_hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, ("God'stime", "Iniobong Eyibio", "godstimeisthebest55@gmail.com", admin_role_id, "Shell oil", 1, password_hash))
+                # NEW TABLE: Observations
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS observations (
+            id {id_type}, reference TEXT UNIQUE, organization TEXT,
+            reporter TEXT, department TEXT, location TEXT,
+            category TEXT, obs_type TEXT, description TEXT,
+            priority TEXT, status TEXT, date_reported TEXT
+        )
+    """)
+            
 
     conn.commit()
     cursor.close()
@@ -1066,6 +1076,73 @@ def toggle_user_status(username):
     return redirect(url_for("admin_panel"))
 
 # ============================================
+@app.route("/observations")
+def observations_register():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    observations = []
+    
+    try:
+        conn = get_db_connection()
+        if os.environ.get('DATABASE_URL'):
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT * FROM observations WHERE organization = %s ORDER BY id DESC", (user_org,))
+            observations = cursor.fetchall()
+        else:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM observations WHERE organization = ? ORDER BY id DESC", (user_org,)).fetchall()
+            observations = [dict(r) for r in rows]
+        conn.close()
+    except Exception as e:
+        print("Observation DB error:", e)
+
+    return render_template("observations.html", active="observations", observations=observations)
+
+@app.route("/raise-observation", methods=["GET", "POST"])
+def raise_observation():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        organization = session.get("organization_name", "Unknown")
+        reporter = session.get("full_name", session.get("username"))
+        
+        department = request.form.get("department", "").strip()
+        location = request.form.get("location", "").strip()
+        category = request.form.get("category", "").strip()
+        obs_type = request.form.get("obs_type", "").strip()
+        description = request.form.get("description", "").strip()
+        priority = request.form.get("priority", "").strip()
+
+        reference = "OBS-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status = "New"
+
+        try:
+            conn = get_db_connection()
+            is_postgres = os.environ.get('DATABASE_URL') is not None
+            q = "%s" if is_postgres else "?"
+            
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                INSERT INTO observations
+                (reference, organization, reporter, department, location, category, obs_type, description, priority, status, date_reported)
+                VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
+            """, (reference, organization, reporter, department, location, category, obs_type, description, priority, status, date_now))
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            log_action(session.get("username"), "RAISE_OBSERVATION", "Observation", reference, f"Raised a {category} observation")
+            return redirect(url_for("observations_register"))
+
+        except Exception as e:
+            return render_template("raise_observation.html", active="observations", error=f"Save failed: {e}")
+
+    return render_template("raise_observation.html", active="observations")
 
 @app.route("/profile")
 def profile():

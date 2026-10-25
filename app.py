@@ -192,6 +192,15 @@ def setup_database():
             status TEXT, date_assigned TEXT
         )
     """)
+
+        # NEW TABLE: Management Activities
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS mgmt_activities (
+            id {id_type}, reference TEXT UNIQUE, organization TEXT,
+            activity_type TEXT, manager_name TEXT, activity_date TEXT,
+            location TEXT, findings TEXT, status TEXT
+        )
+    """)
             
 
     conn.commit()
@@ -1226,6 +1235,70 @@ def observation_detail(obs_id):
 
     return render_template("observation_detail.html", active="observations", obs=obs, actions=actions)
 
+@app.route("/management-engagement")
+def management_engagement():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    activities = []
+    
+    try:
+        conn = get_db_connection()
+        if os.environ.get('DATABASE_URL'):
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT * FROM mgmt_activities WHERE organization = %s ORDER BY id DESC", (user_org,))
+            activities = cursor.fetchall()
+        else:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM mgmt_activities WHERE organization = ? ORDER BY id DESC", (user_org,)).fetchall()
+            activities = [dict(r) for r in rows]
+        conn.close()
+    except Exception as e:
+        print("Mgmt DB error:", e)
+
+    return render_template("management_engagement.html", active="management", activities=activities)
+
+@app.route("/log-activity", methods=["GET", "POST"])
+def log_activity():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        organization = session.get("organization_name", "Unknown")
+        manager_name = session.get("full_name", session.get("username"))
+        
+        activity_type = request.form.get("activity_type", "").strip()
+        activity_date = request.form.get("activity_date", "").strip()
+        location = request.form.get("location", "").strip()
+        findings = request.form.get("findings", "").strip()
+
+        reference = "MGT-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        status = "Completed"
+
+        try:
+            conn = get_db_connection()
+            is_postgres = os.environ.get('DATABASE_URL') is not None
+            q = "%s" if is_postgres else "?"
+            
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                INSERT INTO mgmt_activities
+                (reference, organization, activity_type, manager_name, activity_date, location, findings, status)
+                VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
+            """, (reference, organization, activity_type, manager_name, activity_date, location, findings, status))
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            log_action(session.get("username"), "LOG_MGMT_ACTIVITY", "Management", reference, f"Logged a {activity_type}")
+            return redirect(url_for("management_engagement"))
+
+        except Exception as e:
+            return render_template("log_activity.html", active="management", error=f"Save failed: {e}")
+
+    return render_template("log_activity.html", active="management")
 
 @app.route("/profile")
 def profile():

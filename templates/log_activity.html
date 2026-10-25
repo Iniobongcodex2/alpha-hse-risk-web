@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Log Activity — ALPHA HSE RISK{% endblock %}
+{% block header_title %}Log Management Activity{% endblock %}
+
+{% block content %}
+
+<form method="POST" action="/log-activity">
+    <div class="card">
+        <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Activity Details</h2>
+
+        {% if error %}
+            <p style="color:#DC2626; font-size:13px; font-weight:bold; margin-bottom:10px;">{{ error }}</p>
+        {% endif %}
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Activity Type</label>
+        <select name="activity_type" required
+                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+            <option value="Management Safety Walk">Management Safety Walk</option>
+            <option value="Workplace Inspection">Workplace Inspection</option>
+            <option value="HSE Committee Meeting">HSE Committee Meeting</option>
+            <option value="Toolbox Talk">Toolbox Talk</option>
+            <option value="Performance Review">HSE Performance Review</option>
+            <option value="Environmental Review">Environmental Review</option>
+            <option value="Occupational Health Review">Occupational Health Review</option>
+        </select>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Date of Activity</label>
+        <input type="date" name="activity_date" required
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Location / Site</label>
+        <input type="text" name="location" placeholder="e.g. Site A - Block 4" required
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Findings / Notes</label>
+        <textarea name="findings" placeholder="What did you observe? Any positive practices or areas for improvement?" required
+                  style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:120px;"></textarea>
+    </div>
+
+    <button type="submit" class="btn-primary" style="margin-bottom: 20px; background:#1A4B8C;">
+        📝 Submit Activity
+    </button>
+</form>
+
+{% endblock %}

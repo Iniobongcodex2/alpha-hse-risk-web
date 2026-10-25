@@ -84,16 +84,18 @@
             display: flex;
             z-index: 100;
             box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+            overflow-x: auto; /* Allows scrolling if too many tabs on small screens */
         }
         .app-nav a {
             flex: 1;
+            min-width: 60px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             text-decoration: none;
             color: #6B7280;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             transition: color 0.2s;
         }
@@ -101,7 +103,7 @@
             color: #0F1E3D;
         }
         .app-nav a .nav-icon {
-            font-size: 22px;
+            font-size: 20px;
             margin-bottom: 2px;
         }
 
@@ -181,11 +183,19 @@
             <span>History</span>
         </a>
         
-        <!-- NEW: Observations Tab -->
+        <!-- Observations Tab -->
         <a href="/observations" class="{% if active == 'observations' %}active{% endif %}">
             <span class="nav-icon">📝</span>
-            <span>Observations</span>
+            <span>Observe</span>
         </a>
+
+        <!-- NEW: Management Tab -->
+        {% if session.get('role_id') in (2, 3, 4) %}
+        <a href="/management-engagement" class="{% if active == 'management' %}active{% endif %}">
+            <span class="nav-icon">👔</span>
+            <span>Mgmt</span>
+        </a>
+        {% endif %}
 
         {% if session.get('role_id') == 3 or session.get('role_id') == 4 %}
         <a href="/admin" class="{% if active == 'admin' %}active{% endif %}">

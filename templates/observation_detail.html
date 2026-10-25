@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Observation Details — ALPHA HSE RISK{% endblock %}
+{% block header_title %}Observation Details{% endblock %}
+
+{% block content %}
+
+<!-- Observation Details Card -->
+<div class="card" style="border-left: 4px solid #0A1E3D;">
+    <h2 style="font-size:15px; color:#0A1E3D; margin-bottom:8px;">{{ obs.reference }}</h2>
+    <p style="font-size:12px; color:#6B7280; margin-bottom:12px;">Reported: {{ obs.date_reported }} | By: {{ obs.reporter }}</p>
+    
+    <div style="margin-bottom:10px;">
+        <span style="font-size:12px; font-weight:bold; color:#1A4B8C; background:#E0F2FE; padding:2px 6px; border-radius:4px;">{{ obs.category }}</span>
+        <span style="font-size:12px; color:#4B5563; margin-left:5px;">{{ obs.obs_type }}</span>
+        <span style="font-size:12px; font-weight:bold; color: {% if obs.priority == 'Critical' %}#DC2626{% elif obs.priority == 'High' %}#F97316{% else %}#059669{% endif %}; float:right;">{{ obs.priority }} Priority</span>
+    </div>
+
+    <p style="font-size:14px; color:#1F2937; margin-bottom:15px;">{{ obs.description }}</p>
+
+    <div style="background:#F3F4F6; padding:10px; border-radius:6px; font-size:12px;">
+        <strong>Department:</strong> {{ obs.department }} <br>
+        <strong>Location:</strong> {{ obs.location }} <br>
+        <strong>Status:</strong> {{ obs.status }}
+    </div>
+</div>
+
+<!-- Corrective Actions List -->
+<div class="card">
+    <h3 style="font-size:15px; color:#0F1E3D; margin-bottom:15px;">Corrective Actions</h3>
+    
+    {% for action in actions %}
+    <div style="border:1px solid #E5E7EB; padding:12px; border-radius:6px; margin-bottom:10px; background:#FFFFFF;">
+        <p style="font-size:13px; font-weight:bold; color:#0A1E3D; margin-bottom:5px;">{{ action.action_desc }}</p>
+        <p style="font-size:12px; color:#4B5563;">Assigned to: <strong>{{ action.assigned_to }}</strong> | Due: <strong>{{ action.due_date }}</strong></p>
+        <span style="font-size:11px; background:#E0F2FE; color:#075985; padding:2px 6px; border-radius:4px; font-weight:bold; margin-top:5px; display:inline-block;">{{ action.status }}</span>
+    </div>
+    {% else %}
+    <p style="font-size:13px; color:#6B7280; margin-bottom:15px;">No actions assigned yet.</p>
+    {% endfor %}
+</div>
+
+<!-- Assign New Action Form -->
+<div class="card" style="background:#F8FAFC; border:1px solid #E2E8F0;">
+    <h3 style="font-size:15px; color:#0F1E3D; margin-bottom:15px;">Assign New Action</h3>
+    <form method="POST">
+        <label style="font-size:12px; color:#6B7280; font-weight:600;">Action Required</label>
+        <textarea name="action_desc" required placeholder="Describe the corrective action needed..." style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px; min-height:60px;"></textarea>
+
+        <label style="font-size:12px; color:#6B7280; font-weight:600;">Assign To (Name or Username)</label>
+        <input type="text" name="assigned_to" required placeholder="e.g. John Doe" style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px;">
+
+        <label style="font-size:12px; color:#6B7280; font-weight:600;">Due Date</label>
+        <input type="date" name="due_date" required style="width:100%; padding:10px; margin:6px 0 15px; border:1px solid #CBD5E1; border-radius:6px;">
+
+        <button type="submit" style="background:#0A1E3D; color:#C9A84C; border:none; padding:12px; border-radius:6px; font-weight:bold; width:100%; cursor:pointer;">
+            📋 Assign Action
+        </button>
+    </form>
+</div>
+
+<a href="/observations" style="display:block; text-align:center; margin-top:15px; color:#6B7280; text-decoration:none; font-weight:bold; font-size:14px;">← Back to Observations</a>
+
+{% endblock %}

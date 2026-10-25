@@ -13,7 +13,10 @@
     {% for obs in observations %}
     <div style="border: 1px solid #E5E7EB; border-radius: 8px; padding: 15px; margin-bottom: 12px; background: #F8FAFC;">
         <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
+            
+            <!-- CLICKABLE LINK ADDED HERE -->
             <a href="/observation/{{ obs.id }}" style="font-weight:bold; color:#0A1E3D; font-size:13px; text-decoration:none;">{{ obs.reference }}</a>
+            
             <span style="font-size:11px; color:#6B7280;">{{ obs.date_reported }}</span>
         </div>
         

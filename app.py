@@ -184,6 +184,14 @@ def setup_database():
             priority TEXT, status TEXT, date_reported TEXT
         )
     """)
+        # NEW TABLE: Corrective Actions
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS corrective_actions (
+            id {id_type}, observation_ref TEXT, organization TEXT,
+            action_desc TEXT, assigned_to TEXT, due_date TEXT, 
+            status TEXT, date_assigned TEXT
+        )
+    """)
             
 
     conn.commit()
@@ -1143,6 +1151,81 @@ def raise_observation():
             return render_template("raise_observation.html", active="observations", error=f"Save failed: {e}")
 
     return render_template("raise_observation.html", active="observations")
+
+@app.route("/observation/<int:obs_id>", methods=["GET", "POST"])
+def observation_detail(obs_id):
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    
+    # Handle assigning a new action
+    if request.method == "POST":
+        action_desc = request.form.get("action_desc", "").strip()
+        assigned_to = request.form.get("assigned_to", "").strip()
+        due_date = request.form.get("due_date", "").strip()
+        
+        try:
+            conn = get_db_connection()
+            is_postgres = os.environ.get('DATABASE_URL') is not None
+            q = "%s" if is_postgres else "?"
+            
+            cursor = conn.cursor()
+            # Get the observation reference for linking
+            if is_postgres:
+                cursor.execute("SELECT reference FROM observations WHERE id = %s AND organization = %s", (obs_id, user_org))
+            else:
+                cursor.execute("SELECT reference FROM observations WHERE id = ? AND organization = ?", (obs_id, user_org))
+            obs_row = cursor.fetchone()
+            
+            if obs_row:
+                obs_ref = obs_row[0]
+                date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                cursor.execute(f"""
+                    INSERT INTO corrective_actions
+                    (observation_ref, organization, action_desc, assigned_to, due_date, status, date_assigned)
+                    VALUES ({q}, {q}, {q}, {q}, {q}, 'Open', {q})
+                """, (obs_ref, user_org, action_desc, assigned_to, due_date, date_now))
+                
+                # Update observation status to 'Action Assigned'
+                cursor.execute(f"UPDATE observations SET status = 'Action Assigned' WHERE id = {q}", (obs_id,))
+                
+                conn.commit()
+                log_action(session.get("username"), "ASSIGN_ACTION", "Observation", obs_ref, f"Assigned action to {assigned_to}")
+            
+            cursor.close()
+            conn.close()
+            return redirect(url_for("observation_detail", obs_id=obs_id))
+        except Exception as e:
+            print("Error adding action:", e)
+
+    # Load the observation and its actions
+    obs = None
+    actions = []
+    try:
+        conn = get_db_connection()
+        if os.environ.get('DATABASE_URL'):
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT * FROM observations WHERE id = %s AND organization = %s", (obs_id, user_org))
+            obs = cursor.fetchone()
+            if obs:
+                cursor.execute("SELECT * FROM corrective_actions WHERE observation_ref = %s AND organization = %s ORDER BY id DESC", (obs["reference"], user_org))
+                actions = cursor.fetchall()
+        else:
+            conn.row_factory = sqlite3.Row
+            obs = conn.execute("SELECT * FROM observations WHERE id = ? AND organization = ?", (obs_id, user_org)).fetchone()
+            if obs:
+                actions = [dict(r) for r in conn.execute("SELECT * FROM corrective_actions WHERE observation_ref = ? AND organization = ? ORDER BY id DESC", (obs["reference"], user_org)).fetchall()]
+        conn.close()
+    except Exception as e:
+        print("Error loading observation:", e)
+
+    if not obs:
+        return "Observation not found or access denied.", 404
+
+    return render_template("observation_detail.html", active="observations", obs=obs, actions=actions)
+
 
 @app.route("/profile")
 def profile():

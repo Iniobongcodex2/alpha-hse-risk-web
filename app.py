@@ -291,6 +291,10 @@ def dashboard():
         "total_assessments": 0,
         "total_hazards": 0,
         "high_critical": 0,
+        "total_observations": 0,  # <--- NEW
+        "open_actions": 0,        # <--- NEW
+        "overdue_actions": 0,     # <--- NEW
+        "mgmt_activities": 0,     # <--- NEW
         "recent": []
     }
     role_name = "Unknown"
@@ -327,6 +331,20 @@ def dashboard():
             cursor.execute("SELECT h.category, COUNT(*) as count FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = %s GROUP BY h.category ORDER BY count DESC LIMIT 5", (user_org,))
             top_categories = [dict(row) for row in cursor.fetchall()]
 
+            # --- NEW KPI QUERIES (POSTGRES) ---
+            cursor.execute("SELECT COUNT(*) AS c FROM observations WHERE organization = %s", (user_org,))
+            stats["total_observations"] = cursor.fetchone()["c"]
+            
+            cursor.execute("SELECT COUNT(*) AS c FROM corrective_actions WHERE organization = %s AND status = 'Open'", (user_org,))
+            stats["open_actions"] = cursor.fetchone()["c"]
+            
+            today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            cursor.execute("SELECT COUNT(*) AS c FROM corrective_actions WHERE organization = %s AND status = 'Open' AND due_date < %s", (user_org, today_date))
+            stats["overdue_actions"] = cursor.fetchone()["c"]
+            
+            cursor.execute("SELECT COUNT(*) AS c FROM mgmt_activities WHERE organization = %s", (user_org,))
+            stats["mgmt_activities"] = cursor.fetchone()["c"]
+
         else:
             role_row = conn.execute("SELECT name FROM roles WHERE id = ?", (session.get("role_id"),)).fetchone()
             if role_row: role_name = role_row["name"]
@@ -345,6 +363,14 @@ def dashboard():
 
             cat_rows = conn.execute("SELECT h.category, COUNT(*) as count FROM hazards h JOIN assessments a ON h.assessment_id = a.id WHERE a.organization = ? GROUP BY h.category ORDER BY count DESC LIMIT 5", (user_org,)).fetchall()
             top_categories = [dict(r) for r in cat_rows]
+
+            # --- NEW KPI QUERIES (SQLITE) ---
+            stats["total_observations"] = conn.execute("SELECT COUNT(*) AS c FROM observations WHERE organization = ?", (user_org,)).fetchone()["c"]
+            stats["open_actions"] = conn.execute("SELECT COUNT(*) AS c FROM corrective_actions WHERE organization = ? AND status = 'Open'", (user_org,)).fetchone()["c"]
+            
+            today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            stats["overdue_actions"] = conn.execute("SELECT COUNT(*) AS c FROM corrective_actions WHERE organization = ? AND status = 'Open' AND due_date < ?", (user_org, today_date)).fetchone()["c"]
+            stats["mgmt_activities"] = conn.execute("SELECT COUNT(*) AS c FROM mgmt_activities WHERE organization = ?", (user_org,)).fetchone()["c"]
 
         conn.close()
     except Exception as e:

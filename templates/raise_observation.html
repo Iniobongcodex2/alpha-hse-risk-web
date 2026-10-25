@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Raise Observation — ALPHA HSE RISK{% endblock %}
+{% block header_title %}Raise Observation{% endblock %}
+
+{% block content %}
+
+<form method="POST" action="/raise-observation">
+    <div class="card">
+        <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Observation Details</h2>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Department</label>
+        <input type="text" name="department" placeholder="e.g. Construction" required
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Location / Site</label>
+        <input type="text" name="location" placeholder="e.g. Site A - Block 4" required
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+    </div>
+
+    <div class="card">
+        <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Category & Type</h2>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Observation Category</label>
+        <select name="category" required
+                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+            <option value="Health & Safety">Health & Safety</option>
+            <option value="Quality">Quality</option>
+            <option value="Environmental">Environmental</option>
+            <option value="Occupational Health">Occupational Health</option>
+            <option value="Positive Observation">Positive Observation / Good Practice</option>
+        </select>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Observation Type</label>
+        <select name="obs_type" required
+                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+            <option value="Unsafe Condition">Unsafe Condition</option>
+            <option value="Unsafe Act">Unsafe Act</option>
+            <option value="Near Miss">Near Miss</option>
+            <option value="Positive Behaviour">Positive Behaviour</option>
+            <option value="Environmental Impact">Environmental Impact</option>
+            <option value="Quality Non-Conformance">Quality Non-Conformance</option>
+        </select>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Initial Priority</label>
+        <select name="priority" required
+                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+            <option value="Low">Low</option>
+            <option value="Medium">Medium</option>
+            <option value="High">High</option>
+            <option value="Critical">Critical (Stop Work)</option>
+        </select>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Detailed Description</label>
+        <textarea name="description" placeholder="Describe what you observed, the potential consequence, and any immediate actions taken." required
+                  style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:120px;"></textarea>
+    </div>
+
+    <button type="submit" class="btn-primary" style="margin-bottom: 20px;">
+        📤 Submit Observation
+    </button>
+</form>
+
+{% endblock %}

@@ -410,6 +410,165 @@ def dashboard():
         top_categories=top_categories
     )
 
+@app.route("/dashboard/report")
+def management_report():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    from io import BytesIO
+    from flask import send_file
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor = conn.cursor()
+        
+        # 1. Fetch KPIs
+        stats = {"obs": 0, "open_actions": 0, "overdue_actions": 0, "mgmt": 0}
+        today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        cursor.execute(f"SELECT COUNT(*) FROM observations WHERE organization = {q}", (user_org,))
+        stats["obs"] = cursor.fetchone()[0]
+        
+        cursor.execute(f"SELECT COUNT(*) FROM corrective_actions WHERE organization = {q} AND status IN ('Open', 'In Progress')", (user_org,))
+        stats["open_actions"] = cursor.fetchone()[0]
+        
+        cursor.execute(f"SELECT COUNT(*) FROM corrective_actions WHERE organization = {q} AND status IN ('Open', 'In Progress') AND due_date < {q}", (user_org, today_date))
+        stats["overdue_actions"] = cursor.fetchone()[0]
+        
+        cursor.execute(f"SELECT COUNT(*) FROM mgmt_activities WHERE organization = {q}", (user_org,))
+        stats["mgmt"] = cursor.fetchone()[0]
+
+        # 2. Fetch Open/Overdue Actions
+        cursor.execute(f"SELECT action_desc, assigned_to, due_date, status FROM corrective_actions WHERE organization = {q} AND status IN ('Open', 'In Progress') ORDER BY due_date ASC LIMIT 15", (user_org,))
+        open_actions = cursor.fetchall()
+
+        # 3. Fetch Recent Observations
+        cursor.execute(f"SELECT reference, category, priority, date_reported FROM observations WHERE organization = {q} ORDER BY id DESC LIMIT 10", (user_org,))
+        recent_obs = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        # --- BUILD THE PDF ---
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30,
+            title=f"HSE Management Report - {user_org}", author="ALPHA HSE RISK"
+        )
+
+        styles = getSampleStyleSheet()
+        navy = colors.HexColor("#0A1E3D")
+        gold = colors.HexColor("#C9A84C")
+
+        title_style = ParagraphStyle("T", parent=styles["Heading1"], textColor=gold, fontSize=16, spaceAfter=5)
+        sub_style = ParagraphStyle("S", parent=styles["Normal"], fontSize=10, textColor=colors.grey, spaceAfter=15)
+        h2_style = ParagraphStyle("H2", parent=styles["Heading2"], textColor=navy, fontSize=12, spaceBefore=15, spaceAfter=10)
+        cell_style = ParagraphStyle("C", parent=styles["Normal"], fontSize=8, leading=10, wordWrap="CJK")
+        label_style = ParagraphStyle("L", parent=cell_style, fontName="Helvetica-Bold", textColor=gold)
+
+        elements = [
+            Paragraph("ALPHA HSE RISK - MANAGEMENT REPORT", title_style),
+            Paragraph(f"Organization: {user_org} | Date: {datetime.datetime.now().strftime('%Y-%m-%d')}", sub_style),
+            HRFlowable(width="100%", thickness=1, color=navy, spaceAfter=10)
+        ]
+
+        # KPI Table
+        elements.append(Paragraph("HSE Performance KPIs", h2_style))
+        kpi_data = [
+            ["Total Observations", "Open Actions", "Overdue Actions", "Mgmt Activities"],
+            [str(stats["obs"]), str(stats["open_actions"]), str(stats["overdue_actions"]), str(stats["mgmt"])]
+        ]
+        kpi_table = Table(kpi_data, colWidths=[1.5*inch]*4, hAlign="CENTER")
+        kpi_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), navy),
+            ('TEXTCOLOR', (0, 0), (-1, 0), gold),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+        ]))
+        elements.append(kpi_table)
+
+        # Open Actions Table
+        elements.append(Paragraph("Active & Overdue Corrective Actions", h2_style))
+        if open_actions:
+            action_data = [["Action Required", "Assigned To", "Due Date", "Status"]]
+            for a in open_actions:
+                action_data.append([
+                    Paragraph(str(a[0]), cell_style), Paragraph(str(a[1]), cell_style), 
+                    Paragraph(str(a[2]), cell_style), Paragraph(str(a[3]), cell_style)
+                ])
+            action_table = Table(action_data, colWidths=[3.2*inch, 1.2*inch, 1*inch, 1*inch], hAlign="LEFT")
+            action_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), navy),
+                ('TEXTCOLOR', (0, 0), (-1, 0), gold),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP')
+            ]))
+            elements.append(action_table)
+        else:
+            elements.append(Paragraph("No active corrective actions.", cell_style))
+
+        # Recent Observations Table
+        elements.append(Paragraph("Recent Observations", h2_style))
+        if recent_obs:
+            obs_data = [["Reference", "Category", "Priority", "Date"]]
+            for o in recent_obs:
+                obs_data.append([
+                    Paragraph(str(o[0]), cell_style), Paragraph(str(o[1]), cell_style), 
+                    Paragraph(str(o[2]), cell_style), Paragraph(str(o[3]), cell_style)
+                ])
+            obs_table = Table(obs_data, colWidths=[2*inch, 2*inch, 1.2*inch, 1.2*inch], hAlign="LEFT")
+            obs_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), navy),
+                ('TEXTCOLOR', (0, 0), (-1, 0), gold),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP')
+            ]))
+            elements.append(obs_table)
+        else:
+            elements.append(Paragraph("No observations recorded.", cell_style))
+
+        # Watermark & Footer
+        def add_watermark(canvas, doc):
+            canvas.saveState()
+            canvas.setFont('Helvetica-Bold', 60)
+            canvas.setFillColor(navy)
+            canvas.setFillAlpha(0.05)
+            canvas.translate(300, 400)
+            canvas.rotate(45)
+            canvas.drawCentredString(0, 0, "ALPHA HSE RISK")
+            canvas.restoreState()
+
+        elements.append(Spacer(1, 20))
+        elements.append(HRFlowable(width="100%", thickness=1, color=navy))
+        elements.append(Paragraph("SMART SAFETY. STRONG FUTURE.", ParagraphStyle("F", parent=cell_style, alignment=1, textColor=gold, spaceBefore=10)))
+
+        doc.build(elements, onFirstPage=add_watermark, onLaterPages=add_watermark)
+        buffer.seek(0)
+
+        filename = f"Management_Report_{user_org.replace(' ', '_')}_{datetime.datetime.now().strftime('%Y%m%d')}.pdf"
+        return send_file(buffer, as_attachment=True, download_name=filename, mimetype="application/pdf")
+
+    except Exception as e:
+        app.logger.exception("Failed to generate management report")
+        return f"Failed to generate report: {e}", 500
+
 @app.route("/new", methods=["GET", "POST"])
 def new_assessment():
     if "username" not in session:

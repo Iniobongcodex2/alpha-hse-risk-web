@@ -133,7 +133,55 @@ def setup_database():
             target_id TEXT, details TEXT
         )
     """)
+    
+    # NEW TABLE: Observations
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS observations (
+            id {id_type}, reference TEXT UNIQUE, organization TEXT,
+            reporter TEXT, department TEXT, location TEXT,
+            category TEXT, obs_type TEXT, description TEXT,
+            priority TEXT, status TEXT, date_reported TEXT
+        )
+    """)
+    
+    # NEW TABLE: Corrective Actions
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS corrective_actions (
+            id {id_type}, observation_ref TEXT, organization TEXT,
+            action_desc TEXT, assigned_to TEXT, due_date TEXT, 
+            status TEXT, date_assigned TEXT
+        )
+    """)
+    
+    # NEW TABLE: Management Activities
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS mgmt_activities (
+            id {id_type}, reference TEXT UNIQUE, organization TEXT,
+            activity_type TEXT, manager_name TEXT, activity_date TEXT,
+            location TEXT, findings TEXT, status TEXT
+        )
+    """)
 
+    # IDEMPOTENT MIGRATIONS (Safe for existing databases)
+    if is_postgres:
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='corrective_actions'")
+        existing_cols = [row[0] for row in cursor.fetchall()]
+    else:
+        cursor.execute("PRAGMA table_info(corrective_actions)")
+        existing_cols = [row[1] for row in cursor.fetchall()]
+
+    if 'completion_notes' not in existing_cols:
+        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN completion_notes TEXT")
+    if 'completed_date' not in existing_cols:
+        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN completed_date TEXT")
+    if 'verified_by' not in existing_cols:
+        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN verified_by TEXT")
+    if 'verified_date' not in existing_cols:
+        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN verified_date TEXT")
+    if 'completed_by' not in existing_cols:
+        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN completed_by TEXT")
+
+    # Seed Roles
     roles = [
         ("HSE Officer", "Creates and edits assessments"),
         ("HSE Supervisor", "Reviews team assessments"),
@@ -147,6 +195,7 @@ def setup_database():
         else:
             cursor.execute("INSERT OR IGNORE INTO roles (name, description) VALUES (?, ?)", (role_name, description))
 
+    # Seed Admin User
     cursor.execute("SELECT COUNT(*) FROM users")
     row = cursor.fetchone()
     
@@ -175,33 +224,6 @@ def setup_database():
                 INSERT INTO users (username, full_name, email, role_id, organization_name, is_active, password_hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, ("God'stime", "Iniobong Eyibio", "godstimeisthebest55@gmail.com", admin_role_id, "Shell oil", 1, password_hash))
-                # NEW TABLE: Observations
-    cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS observations (
-            id {id_type}, reference TEXT UNIQUE, organization TEXT,
-            reporter TEXT, department TEXT, location TEXT,
-            category TEXT, obs_type TEXT, description TEXT,
-            priority TEXT, status TEXT, date_reported TEXT
-        )
-    """)
-        # NEW TABLE: Corrective Actions
-    cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS corrective_actions (
-            id {id_type}, observation_ref TEXT, organization TEXT,
-            action_desc TEXT, assigned_to TEXT, due_date TEXT, 
-            status TEXT, date_assigned TEXT
-        )
-    """)
-
-        # NEW TABLE: Management Activities
-    cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS mgmt_activities (
-            id {id_type}, reference TEXT UNIQUE, organization TEXT,
-            activity_type TEXT, manager_name TEXT, activity_date TEXT,
-            location TEXT, findings TEXT, status TEXT
-        )
-    """)
-            
 
     conn.commit()
     cursor.close()
@@ -1325,6 +1347,142 @@ def log_activity():
             return render_template("log_activity.html", active="management", error=f"Save failed: {e}")
 
     return render_template("log_activity.html", active="management")
+
+@app.route("/action/<int:action_id>/edit", methods=["POST"])
+def edit_action(action_id):
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    new_desc = request.form.get("action_desc", "").strip()
+    new_assignee = request.form.get("assigned_to", "").strip()
+    new_due_date = request.form.get("due_date", "").strip()
+
+    if not new_desc or not new_assignee or not new_due_date:
+        return "All fields are required for editing.", 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor = conn.cursor()
+        
+        cursor.execute(f"SELECT id FROM corrective_actions WHERE id = {q} AND organization = {q}", (action_id, user_org))
+        if not cursor.fetchone():
+            return "Action not found or unauthorized.", 404
+
+        cursor.execute(f"""
+            UPDATE corrective_actions 
+            SET action_desc = {q}, assigned_to = {q}, due_date = {q}
+            WHERE id = {q} AND organization = {q}
+        """, (new_desc, new_assignee, new_due_date, action_id, user_org))
+        
+        cursor.execute(f"""
+            INSERT INTO audit_log (username, action, target_type, target_id, details)
+            VALUES ({q}, {q}, {q}, {q}, {q})
+        """, (session.get("username"), "EDIT_ACTION", "CorrectiveAction", str(action_id), f"Edited action details"))
+        
+        conn.commit()
+        
+        cursor.execute(f"SELECT observation_ref FROM corrective_actions WHERE id = {q}", (action_id,))
+        obs_ref = cursor.fetchone()[0]
+        cursor.execute(f"SELECT id FROM observations WHERE reference = {q} AND organization = {q}", (obs_ref, user_org))
+        obs_id = cursor.fetchone()[0]
+        
+        return redirect(url_for("observation_detail", obs_id=obs_id))
+
+    except Exception as e:
+        if conn: conn.rollback()
+        app.logger.exception("Error editing action")
+        return "An internal error occurred.", 500
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+@app.route("/action/<int:action_id>/update", methods=["POST"])
+def update_action(action_id):
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    user_role = session.get("role_id")
+    new_status = request.form.get("status", "").strip()
+    completion_notes = request.form.get("completion_notes", "").strip()
+    date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if new_status not in ('Open', 'In Progress', 'Completed', 'Verified/Closed'):
+        return "Invalid status provided.", 400
+
+    if new_status == "Verified/Closed" and user_role not in (2, 3, 4):
+        return "Access Denied: Only Managers or Admins can verify actions.", 403
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor = conn.cursor()
+        
+        cursor.execute(f"SELECT observation_ref, status FROM corrective_actions WHERE id = {q} AND organization = {q}", (action_id, user_org))
+        action = cursor.fetchone()
+
+        if not action:
+            return "Action not found or unauthorized.", 404
+
+        obs_ref, old_status = action[0], action[1]
+
+        if new_status == "Verified/Closed" and old_status not in ('Completed', 'Verified/Closed'):
+            return "Action must be marked 'Completed' before it can be 'Verified/Closed'.", 400
+
+        cursor.execute(f"SELECT id FROM observations WHERE reference = {q} AND organization = {q}", (obs_ref, user_org))
+        obs_row = cursor.fetchone()
+        if not obs_row:
+            return "Associated observation not found.", 404
+        actual_obs_id = obs_row[0]
+
+        completed_date = None
+        completed_by = None
+        verified_by = None
+        verified_date = None
+        
+        if new_status in ("Open", "In Progress"):
+            pass 
+        elif new_status == "Completed":
+            completed_date = date_now
+            completed_by = session.get("username")
+        elif new_status == "Verified/Closed":
+            completed_date = date_now if old_status != 'Verified/Closed' else request.form.get("existing_completed_date", date_now)
+            completed_by = session.get("username") if old_status != 'Verified/Closed' else request.form.get("existing_completed_by", session.get("username"))
+            verified_by = session.get("username")
+            verified_date = date_now if old_status != 'Verified/Closed' else request.form.get("existing_verified_date", date_now)
+
+        cursor.execute(f"""
+            UPDATE corrective_actions 
+            SET status = {q}, completion_notes = {q}, completed_date = {q}, completed_by = {q}, verified_by = {q}, verified_date = {q}
+            WHERE id = {q} AND organization = {q}
+        """, (new_status, completion_notes, completed_date, completed_by, verified_by, verified_date, action_id, user_org))
+        
+        cursor.execute(f"""
+            INSERT INTO audit_log (username, action, target_type, target_id, details)
+            VALUES ({q}, {q}, {q}, {q}, {q})
+        """, (session.get("username"), "UPDATE_ACTION", "CorrectiveAction", str(action_id), f"Status changed from {old_status} to {new_status}"))
+        
+        conn.commit()
+        return redirect(url_for("observation_detail", obs_id=actual_obs_id))
+
+    except Exception as e:
+        if conn: conn.rollback()
+        app.logger.exception("Error updating corrective action")
+        return "An internal database error occurred.", 500
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
 
 @app.route("/profile")
 def profile():

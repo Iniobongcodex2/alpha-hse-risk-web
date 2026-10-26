@@ -11,10 +11,12 @@ import datetime
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 from io import BytesIO
+from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key-later-2026"
 app.permanent_session_lifetime = datetime.timedelta(days=30)
+
 
 # ============================================
 # DATABASE CONNECTION (Postgres in cloud, SQLite local)

@@ -17,6 +17,10 @@ app = Flask(__name__)
 app.secret_key = "change-this-secret-key-later-2026"
 app.permanent_session_lifetime = datetime.timedelta(days=30)
 
+# --- ADD THESE TWO LINES ---
+csrf = CSRFProtect(app)
+# ---------------------------
+
 
 # ============================================
 # DATABASE CONNECTION (Postgres in cloud, SQLite local)
@@ -163,6 +167,21 @@ def setup_database():
             location TEXT, findings TEXT, status TEXT
         )
     """)
+
+    # --- NEW TABLE: Notification Log (Stage A) ---
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS notification_log (
+            id {id_type}, 
+            action_id INTEGER,
+            notification_type TEXT,
+            target_date TEXT,
+            status TEXT DEFAULT 'PENDING',
+            locked_until TEXT,
+            worker_token TEXT,
+            UNIQUE(action_id, notification_type, target_date)
+        )
+    """)
+    # --------------------------------------------
 
     # IDEMPOTENT MIGRATIONS (Safe for existing databases)
     if is_postgres:
@@ -1383,12 +1402,21 @@ def observation_detail(obs_id):
         assigned_to = request.form.get("assigned_to", "").strip()
         due_date = request.form.get("due_date", "").strip()
         
+        conn = None
         try:
             conn = get_db_connection()
             is_postgres = os.environ.get('DATABASE_URL') is not None
             q = "%s" if is_postgres else "?"
             
             cursor = conn.cursor()
+            
+            # --- NEW: Strict Server-Side Validation (Stage A) ---
+            cursor.execute(f"SELECT id FROM users WHERE full_name = {q} AND organization_name = {q} AND is_active = 1", (assigned_to, user_org))
+            valid_user = cursor.fetchone()
+            if not valid_user:
+                return "Error: The selected assignee is invalid, inactive, or does not belong to your organization.", 400
+            # ----------------------------------------------------
+
             # Get the observation reference for linking
             if is_postgres:
                 cursor.execute("SELECT reference FROM observations WHERE id = %s AND organization = %s", (obs_id, user_org))
@@ -1413,28 +1441,44 @@ def observation_detail(obs_id):
                 log_action(session.get("username"), "ASSIGN_ACTION", "Observation", obs_ref, f"Assigned action to {assigned_to}")
             
             cursor.close()
-            conn.close()
             return redirect(url_for("observation_detail", obs_id=obs_id))
         except Exception as e:
+            if conn: conn.rollback()
             print("Error adding action:", e)
+            return "Database error occurred.", 500
+        finally:
+            if conn: conn.close()
 
     # Load the observation and its actions
     obs = None
     actions = []
+    users = [] # <--- NEW for dropdown
     try:
         conn = get_db_connection()
-        if os.environ.get('DATABASE_URL'):
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        if is_postgres:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute("SELECT * FROM observations WHERE id = %s AND organization = %s", (obs_id, user_org))
             obs = cursor.fetchone()
             if obs:
                 cursor.execute("SELECT * FROM corrective_actions WHERE observation_ref = %s AND organization = %s ORDER BY id DESC", (obs["reference"], user_org))
                 actions = cursor.fetchall()
+            
+            # --- NEW: Fetch eligible users for dropdown ---
+            cursor.execute("SELECT full_name FROM users WHERE organization_name = %s AND is_active = 1 ORDER BY full_name ASC", (user_org,))
+            users = cursor.fetchall()
+            # ---------------------------------------------
         else:
             conn.row_factory = sqlite3.Row
             obs = conn.execute("SELECT * FROM observations WHERE id = ? AND organization = ?", (obs_id, user_org)).fetchone()
             if obs:
                 actions = [dict(r) for r in conn.execute("SELECT * FROM corrective_actions WHERE observation_ref = ? AND organization = ? ORDER BY id DESC", (obs["reference"], user_org)).fetchall()]
+            
+            # --- NEW: Fetch eligible users for dropdown ---
+            users = [dict(r) for r in conn.execute("SELECT full_name FROM users WHERE organization_name = ? AND is_active = 1 ORDER BY full_name ASC", (user_org,)).fetchall()]
+            # ---------------------------------------------
         conn.close()
     except Exception as e:
         print("Error loading observation:", e)
@@ -1442,7 +1486,7 @@ def observation_detail(obs_id):
     if not obs:
         return "Observation not found or access denied.", 404
 
-    return render_template("observation_detail.html", active="observations", obs=obs, actions=actions)
+    return render_template("observation_detail.html", active="observations", obs=obs, actions=actions, users=users)
 
 @app.route("/management-engagement")
 def management_engagement():

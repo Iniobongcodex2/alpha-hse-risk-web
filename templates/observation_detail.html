@@ -71,6 +71,8 @@
         <details style="margin-bottom: 10px;">
             <summary style="font-size:11px; color:#1A4B8C; cursor:pointer; font-weight:bold;">✏️ Edit Action Details</summary>
             <form method="POST" action="/action/{{ action.id }}/edit" style="background:#FFF; padding:10px; margin-top:5px; border:1px solid #CBD5E1; border-radius:6px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
                 <label style="font-size:11px; color:#6B7280; font-weight:bold;">Description</label>
                 <input type="text" name="action_desc" value="{{ action.action_desc }}" required style="width:100%; padding:6px; margin-bottom:8px; font-size:12px; border:1px solid #CBD5E1; border-radius:4px;">
                 
@@ -86,6 +88,7 @@
 
         <!-- Status Update Form -->
         <form method="POST" action="/action/{{ action.id }}/update" style="background:#F8FAFC; padding:10px; border-radius:6px; border:1px solid #E2E8F0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="existing_completed_date" value="{{ action.completed_date or '' }}">
             <input type="hidden" name="existing_completed_by" value="{{ action.completed_by or '' }}">
             <input type="hidden" name="existing_verified_date" value="{{ action.verified_date or '' }}">
@@ -122,11 +125,19 @@
 <div class="card" style="background:#F8FAFC; border:1px solid #E2E8F0;">
     <h3 style="font-size:15px; color:#0F1E3D; margin-bottom:15px;">Assign New Action</h3>
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
         <label style="font-size:12px; color:#6B7280; font-weight:600;">Action Required</label>
         <textarea name="action_desc" required placeholder="Describe the corrective action needed..." style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px; min-height:60px;"></textarea>
 
-        <label style="font-size:12px; color:#6B7280; font-weight:600;">Assign To (Name or Username)</label>
-        <input type="text" name="assigned_to" required placeholder="e.g. John Doe" style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px;">
+        <!-- NEW: Secured Dropdown for Assignee -->
+        <label style="font-size:12px; color:#6B7280; font-weight:600;">Assign To</label>
+        <select name="assigned_to" required style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px; background:#FFFFFF;">
+            <option value="">Select an active user...</option>
+            {% for u in users %}
+                <option value="{{ u.full_name }}">{{ u.full_name }}</option>
+            {% endfor %}
+        </select>
 
         <label style="font-size:12px; color:#6B7280; font-weight:600;">Due Date</label>
         <input type="date" name="due_date" required style="width:100%; padding:10px; margin:6px 0 15px; border:1px solid #CBD5E1; border-radius:6px;">

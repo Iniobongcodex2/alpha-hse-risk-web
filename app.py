@@ -12,7 +12,11 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 from io import BytesIO
 from flask_wtf.csrf import CSRFProtect
-
+import html
+from dotenv import load_dotenv
+load_dotenv() 
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key-later-2026"
 app.permanent_session_lifetime = datetime.timedelta(days=30)
@@ -94,6 +98,31 @@ def log_action(username, action, target_type, target_id, details):
         conn.close()
     except Exception as e:
         print(f"Failed to write audit log: {e}")
+        
+def send_email_notification(to_email, subject, html_content):
+    if not to_email:
+        return False
+        
+    api_key = os.environ.get('SENDGRID_API_KEY')
+    sender = os.environ.get('SENDER_EMAIL')
+    
+    if not api_key or not sender:
+        print("Email Error: SENDGRID_API_KEY or SENDER_EMAIL missing.")
+        return False
+        
+    try:
+        message = Mail(
+            from_email=sender,
+            to_emails=to_email,
+            subject=subject,
+            html_content=html_content
+        )
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        return response.status_code == 202
+    except Exception as e:
+        print(f"SendGrid Exception: {type(e).__name__}")
+        return False        
 
 def setup_database():
     """Creates tables if they don't exist, and seeds the admin user."""
@@ -1410,7 +1439,7 @@ def observation_detail(obs_id):
             
             cursor = conn.cursor()
             
-            # --- NEW: Strict Server-Side Validation (Stage A) ---
+            # --- Strict Server-Side Validation (Stage A) ---
             cursor.execute(f"SELECT id FROM users WHERE full_name = {q} AND organization_name = {q} AND is_active = 1", (assigned_to, user_org))
             valid_user = cursor.fetchone()
             if not valid_user:
@@ -1437,7 +1466,42 @@ def observation_detail(obs_id):
                 # Update observation status to 'Action Assigned'
                 cursor.execute(f"UPDATE observations SET status = 'Action Assigned' WHERE id = {q}", (obs_id,))
                 
+                # --- SAVE TO DATABASE FIRST ---
                 conn.commit()
+                
+                # --- NEW: SEND ASSIGNMENT EMAIL (Safe Post-Commit) ---
+                try:
+                    # Look up the user's email securely within the same organization
+                    cursor.execute(f"SELECT email FROM users WHERE full_name = {q} AND organization_name = {q}", (assigned_to, user_org))
+                    user_row = cursor.fetchone()
+                    
+                    if user_row:
+                        email_addr = user_row['email'] if is_postgres else user_row['email']
+                        
+                        if email_addr:
+                            subject = f"New Action Assigned: {obs_ref}"
+                            # Escape the text so it can't inject HTML into the email
+                            safe_desc = html.escape(action_desc)
+                            safe_date = html.escape(due_date)
+                            
+                            body = f"""
+                            <div style="font-family: Arial, sans-serif; padding: 20px; background: #F3F4F6;">
+                                <h2 style="color: #0A1E3D;">New Corrective Action Assigned</h2>
+                                <p><strong>Observation:</strong> {obs_ref}</p>
+                                <p><strong>Action Required:</strong> {safe_desc}</p>
+                                <p><strong>Due Date:</strong> {safe_date}</p>
+                                <br>
+                                <a href="https://alpha-hse-risk-web.onrender.com/observation/{obs_id}" style="background: #0A1E3D; color: #C9A84C; padding: 10px 15px; text-decoration: none; border-radius: 5px; font-weight: bold;">Log in to view</a>
+                                <br><br>
+                                <p style="font-size: 12px; color: #6B7280;">SMART SAFETY. STRONG FUTURE.</p>
+                            </div>
+                            """
+                            send_email_notification(email_addr, subject, body)
+                except Exception as mail_err:
+                    print(f"Non-fatal email error: {type(mail_err).__name__}")
+                # ------------------------------------------------------
+                
+                # Audit Log
                 log_action(session.get("username"), "ASSIGN_ACTION", "Observation", obs_ref, f"Assigned action to {assigned_to}")
             
             cursor.close()
@@ -1449,45 +1513,38 @@ def observation_detail(obs_id):
         finally:
             if conn: conn.close()
 
-    # Load the observation and its actions
+    # --- GET REQUEST LOGIC STARTS HERE ---
     obs = None
     actions = []
-    users = [] # <--- NEW for dropdown
+    users = []
+    conn = None
     try:
         conn = get_db_connection()
         is_postgres = os.environ.get('DATABASE_URL') is not None
         q = "%s" if is_postgres else "?"
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgres else conn.cursor()
         
-        if is_postgres:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cursor.execute("SELECT * FROM observations WHERE id = %s AND organization = %s", (obs_id, user_org))
-            obs = cursor.fetchone()
-            if obs:
-                cursor.execute("SELECT * FROM corrective_actions WHERE observation_ref = %s AND organization = %s ORDER BY id DESC", (obs["reference"], user_org))
-                actions = cursor.fetchall()
+        cursor.execute(f"SELECT * FROM observations WHERE id = {q} AND organization = {q}", (obs_id, user_org))
+        obs = cursor.fetchone()
+        
+        if obs:
+            cursor.execute(f"SELECT * FROM corrective_actions WHERE observation_ref = {q} AND organization = {q} ORDER BY id DESC", (obs["reference"] if is_postgres else obs["reference"], user_org))
+            actions = cursor.fetchall()
             
-            # --- NEW: Fetch eligible users for dropdown ---
-            cursor.execute("SELECT full_name FROM users WHERE organization_name = %s AND is_active = 1 ORDER BY full_name ASC", (user_org,))
-            users = cursor.fetchall()
-            # ---------------------------------------------
-        else:
-            conn.row_factory = sqlite3.Row
-            obs = conn.execute("SELECT * FROM observations WHERE id = ? AND organization = ?", (obs_id, user_org)).fetchone()
-            if obs:
-                actions = [dict(r) for r in conn.execute("SELECT * FROM corrective_actions WHERE observation_ref = ? AND organization = ? ORDER BY id DESC", (obs["reference"], user_org)).fetchall()]
-            
-            # --- NEW: Fetch eligible users for dropdown ---
-            users = [dict(r) for r in conn.execute("SELECT full_name FROM users WHERE organization_name = ? AND is_active = 1 ORDER BY full_name ASC", (user_org,)).fetchall()]
-            # ---------------------------------------------
-        conn.close()
+        # Fetch eligible users for dropdown
+        cursor.execute(f"SELECT full_name FROM users WHERE organization_name = {q} AND is_active = 1 ORDER BY full_name ASC", (user_org,))
+        users = cursor.fetchall()
+        
+        cursor.close()
     except Exception as e:
-        print("Error loading observation:", e)
+        print(f"Observation GET Error: {type(e).__name__}")
+    finally:
+        if conn: conn.close()
 
     if not obs:
         return "Observation not found or access denied.", 404
 
     return render_template("observation_detail.html", active="observations", obs=obs, actions=actions, users=users)
-
 @app.route("/management-engagement")
 def management_engagement():
     if "username" not in session:

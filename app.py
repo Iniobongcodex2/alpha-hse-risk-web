@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 load_dotenv() 
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
+import hmac
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key-later-2026"
 app.permanent_session_lifetime = datetime.timedelta(days=30)
@@ -1764,6 +1765,86 @@ def service_worker():
     response.headers['Content-Type'] = 'application/javascript'
     response.headers['Service-Worker-Allowed'] = '/'
     return response
+
+@app.route("/cron/check-overdue", methods=["GET"])
+def cron_check_overdue():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return "Unauthorized: Missing Header", 401
+        
+    token = auth_header.split(' ')[1]
+    expected_secret = os.environ.get('CRON_SECRET')
+    
+    if not expected_secret or not hmac.compare_digest(token, expected_secret):
+        return "Unauthorized: Invalid Token", 403
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgres else conn.cursor()
+        today_date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        
+        cursor.execute(f"""
+            SELECT id, organization, action_desc, assigned_to, due_date 
+            FROM corrective_actions 
+            WHERE status IN ('Open', 'In Progress') 
+            AND due_date < {q} 
+        """, (today_date,))
+        
+        overdue_actions = cursor.fetchall()
+        emails_sent = 0
+        
+        for action in overdue_actions:
+            action_id = action['id'] if is_postgres else action['id']
+            org = action['organization'] if is_postgres else action['organization']
+            desc = action['action_desc'] if is_postgres else action['action_desc']
+            assignee = action['assigned_to'] if is_postgres else action['assigned_to']
+            due_date = action['due_date'] if is_postgres else action['due_date']
+            
+            try:
+                if is_postgres:
+                    cursor.execute("INSERT INTO notification_log (action_id, notification_type, target_date, status) VALUES (%s, 'overdue', %s, 'PENDING') ON CONFLICT DO NOTHING", (action_id, today_date))
+                else:
+                    cursor.execute("INSERT OR IGNORE INTO notification_log (action_id, notification_type, target_date, status) VALUES (?, 'overdue', ?, 'PENDING')", (action_id, today_date))
+                
+                if cursor.rowcount == 0:
+                    continue
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                continue
+            
+            cursor.execute(f"SELECT email FROM users WHERE full_name = {q} AND organization_name = {q}", (assignee, org))
+            user_row = cursor.fetchone()
+            
+            if user_row:
+                email_addr = user_row['email'] if is_postgres else user_row['email']
+                if email_addr:
+                    subject = f"OVERDUE ALERT: Corrective Action ({due_date})"
+                    safe_desc = html.escape(desc)
+                    body = f"""
+                    <div style="font-family: Arial, sans-serif; padding: 20px; background: #FEF3C7; border-left: 5px solid #DC2626;">
+                        <h2 style="color: #DC2626;">OVERDUE Corrective Action</h2>
+                        <p><strong>Action:</strong> {safe_desc}</p>
+                        <p><strong>Due Date:</strong> {due_date} (Past Due)</p>
+                        <br>
+                        <a href="https://alpha-hse-risk-web.onrender.com/" style="background: #0A1E3D; color: #C9A84C; padding: 10px 15px; text-decoration: none; border-radius: 5px; font-weight: bold;">Log in to resolve</a>
+                    </div>
+                    """
+                    if send_email_notification(email_addr, subject, body):
+                        emails_sent += 1
+
+        cursor.close()
+        return f"Success: Checked {len(overdue_actions)} overdue actions. Sent {emails_sent} emails.", 200
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"Cron Error: {type(e).__name__}")
+        return "Internal Error", 500
+    finally:
+        if conn: conn.close()
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)

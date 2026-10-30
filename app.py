@@ -1408,6 +1408,33 @@ def raise_observation():
             """, (reference, organization, reporter, department, location, category, obs_type, description, priority, status, date_now))
             
             conn.commit()
+
+            # --- NEW: SEND OBSERVATION EMAIL ---
+            try:
+                cursor.execute(f"SELECT email FROM users WHERE username = {q} AND organization_name = {q}", (session.get("username"), organization))
+                user_row = cursor.fetchone()
+                
+                if user_row:
+                    email_addr = user_row['email'] if is_postgres else user_row['email']
+                    if email_addr:
+                        subject = f"Observation Logged: {reference}"
+                        safe_desc = html.escape(description)
+                        body = f"""
+                        <div style="font-family: Arial, sans-serif; padding: 20px; border-left: 5px solid #1A4B8C;">
+                            <h2 style="color: #0A1E3D;">New Observation Recorded</h2>
+                            <p><strong>Reference:</strong> {reference}</p>
+                            <p><strong>Category:</strong> {category} ({obs_type})</p>
+                            <p><strong>Priority:</strong> {priority}</p>
+                            <p><strong>Description:</strong> {safe_desc}</p>
+                            <br>
+                            <a href="https://alpha-hse-risk-web.onrender.com/observations" style="background: #0A1E3D; color: #C9A84C; padding: 10px 15px; text-decoration: none; border-radius: 5px; font-weight: bold;">View Observation</a>
+                        </div>
+                        """
+                        send_email_notification(email_addr, subject, body)
+            except Exception as mail_err:
+                print(f"Non-fatal observation email error: {type(mail_err).__name__}")
+            # -------------------------------------
+
             cursor.close()
             conn.close()
 
@@ -1690,7 +1717,7 @@ def update_action(action_id):
         is_postgres = os.environ.get('DATABASE_URL') is not None
         q = "%s" if is_postgres else "?"
         
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgres else conn.cursor()
         
         cursor.execute(f"SELECT observation_ref, status FROM corrective_actions WHERE id = {q} AND organization = {q}", (action_id, user_org))
         action = cursor.fetchone()
@@ -1698,7 +1725,13 @@ def update_action(action_id):
         if not action:
             return "Action not found or unauthorized.", 404
 
-        obs_ref, old_status = action[0], action[1]
+        # FIX: Handle Postgres Dictionary vs SQLite Tuple
+        if is_postgres:
+            obs_ref = action['observation_ref']
+            old_status = action['status']
+        else:
+            obs_ref = action[0]
+            old_status = action[1]
 
         if new_status == "Verified/Closed" and old_status not in ('Completed', 'Verified/Closed'):
             return "Action must be marked 'Completed' before it can be 'Verified/Closed'.", 400
@@ -1707,7 +1740,8 @@ def update_action(action_id):
         obs_row = cursor.fetchone()
         if not obs_row:
             return "Associated observation not found.", 404
-        actual_obs_id = obs_row[0]
+        
+        actual_obs_id = obs_row['id'] if is_postgres else obs_row[0]
 
         completed_date = None
         completed_by = None
@@ -1737,12 +1771,40 @@ def update_action(action_id):
         """, (session.get("username"), "UPDATE_ACTION", "CorrectiveAction", str(action_id), f"Status changed from {old_status} to {new_status}"))
         
         conn.commit()
+        
+        # --- NEW: SEND COMPLETION EMAIL ---
+        if new_status == "Completed":
+            try:
+                # Find the manager/admin email for this organization
+                cursor.execute(f"SELECT email FROM users WHERE organization_name = {q} AND role_id IN (2, 3, 4) LIMIT 1", (user_org,))
+                manager_row = cursor.fetchone()
+                
+                if manager_row:
+                    mgr_email = manager_row['email'] if is_postgres else manager_row[0]
+                    if mgr_email:
+                        subject = f"Action Completed: {obs_ref}"
+                        safe_notes = html.escape(completion_notes) if completion_notes else "No notes provided."
+                        body = f"""
+                        <div style="font-family: Arial, sans-serif; padding: 20px; border-left: 5px solid #059669;">
+                            <h2 style="color: #059669;">Action Marked as Completed</h2>
+                            <p><strong>Observation:</strong> {obs_ref}</p>
+                            <p><strong>Completed By:</strong> {session.get('full_name')}</p>
+                            <p><strong>Notes:</strong> {safe_notes}</p>
+                            <br>
+                            <a href="https://alpha-hse-risk-web.onrender.com/observations" style="background: #0A1E3D; color: #C9A84C; padding: 10px 15px; text-decoration: none; border-radius: 5px; font-weight: bold;">Verify Action</a>
+                        </div>
+                        """
+                        send_email_notification(mgr_email, subject, body)
+            except Exception as mail_err:
+                print(f"Non-fatal completion email error: {type(mail_err).__name__}")
+        # ----------------------------------
+        
         return redirect(url_for("observation_detail", obs_id=actual_obs_id))
-
+        
     except Exception as e:
         if conn: conn.rollback()
-        app.logger.exception("Error updating corrective action")
-        return "An internal database error occurred.", 500
+        print(f"Update action error: {type(e).__name__}")
+        return "An internal error occurred.", 500
     finally:
         if cursor: cursor.close()
         if conn: conn.close()

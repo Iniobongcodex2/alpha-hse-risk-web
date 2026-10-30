@@ -11,6 +11,9 @@
 </div>
 
 <form method="POST" action="/login">
+    <!-- CSRF Token must be INSIDE the form -->
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
     <div class="card">
         <label style="font-size:13px; color:#6B7280; font-weight:600;">Username</label>
         <input type="text" name="username" placeholder="Enter username" required

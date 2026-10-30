@@ -14,6 +14,24 @@
     </h2>
     <p style="color:#6B7280; font-size:14px; margin-bottom: 20px;">Here's your HSE overview for <strong>{{ session.get('organization_name') }}</strong>.</p>
 
+    <!-- NEW: Management Report with Date Filter -->
+    <div style="margin-bottom: 25px; background: #F8FAFC; padding: 15px; border-radius: 8px; border: 1px solid #E2E8F0;">
+        <h3 style="font-size: 14px; color: #0A1E3D; margin-bottom: 10px;">Download Management Report</h3>
+        <form action="/dashboard/report" method="GET" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+            <div style="flex: 1; min-width: 130px;">
+                <label style="font-size: 11px; color: #6B7280; font-weight: bold;">Start Date</label>
+                <input type="date" name="start_date" required style="width: 100%; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 13px;">
+            </div>
+            <div style="flex: 1; min-width: 130px;">
+                <label style="font-size: 11px; color: #6B7280; font-weight: bold;">End Date</label>
+                <input type="date" name="end_date" required style="width: 100%; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 13px;">
+            </div>
+            <button type="submit" style="background: #0A1E3D; color: #C9A84C; border: none; padding: 9px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">
+                📄 Generate PDF
+            </button>
+        </form>
+    </div>
+
     <!-- KPI CARDS -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
         <div style="background: #F8FAFC; padding: 15px; border-radius: 8px; border: 1px solid #E2E8F0; text-align: center;">
@@ -30,40 +48,29 @@
         </div>
     </div>
 
-    <!-- HSE MANAGEMENT KPIs -->
-    <h3 style="font-size: 15px; color: #0F1E3D; margin-top: 20px; margin-bottom: 10px;">HSE Management KPIs</h3>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
-        
-        <!-- Observations -->
-        <div style="background: #F8FAFC; padding: 15px; border-radius: 8px; border: 1px solid #E2E8F0; text-align: center; border-left: 4px solid #1A4B8C;">
+    <!-- NEW: HSE Management KPIs -->
+    <h3 style="font-size:15px; color:#0F1E3D; margin-top: 25px; margin-bottom: 10px;">HSE Management KPIs</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 25px;">
+        <!-- Total Observations -->
+        <div class="card" style="padding: 15px; border-left: 4px solid #1A4B8C; margin-bottom: 0; background: #FFFFFF;">
             <p style="font-size: 12px; color: #6B7280; font-weight: bold; margin-bottom: 5px;">Total Observations</p>
             <p style="font-size: 24px; color: #1A4B8C; font-weight: bold;">{{ stats.total_observations }}</p>
         </div>
-
         <!-- Open Actions -->
-        <div style="background: #F8FAFC; padding: 15px; border-radius: 8px; border: 1px solid #E2E8F0; text-align: center; border-left: 4px solid #C9A84C;">
+        <div class="card" style="padding: 15px; border-left: 4px solid #F59E0B; margin-bottom: 0; background: #FFFFFF;">
             <p style="font-size: 12px; color: #6B7280; font-weight: bold; margin-bottom: 5px;">Open Actions</p>
-            <p style="font-size: 24px; color: #C9A84C; font-weight: bold;">{{ stats.open_actions }}</p>
+            <p style="font-size: 24px; color: #F59E0B; font-weight: bold;">{{ stats.open_actions }}</p>
         </div>
-
         <!-- Overdue Actions -->
-        <div style="background: #FEF2F2; padding: 15px; border-radius: 8px; border: 1px solid #FECACA; text-align: center; border-left: 4px solid #DC2626;">
-            <p style="font-size: 12px; color: #991B1B; font-weight: bold; margin-bottom: 5px;">Overdue Actions</p>
+        <div class="card" style="padding: 15px; border-left: 4px solid #DC2626; margin-bottom: 0; background: #FFFFFF;">
+            <p style="font-size: 12px; color: #6B7280; font-weight: bold; margin-bottom: 5px;">Overdue Actions</p>
             <p style="font-size: 24px; color: #DC2626; font-weight: bold;">{{ stats.overdue_actions }}</p>
         </div>
-
-        <!-- Management Activities -->
-        <div style="background: #F8FAFC; padding: 15px; border-radius: 8px; border: 1px solid #E2E8F0; text-align: center; border-left: 4px solid #4A7C59;">
+        <!-- Mgmt Activities -->
+        <div class="card" style="padding: 15px; border-left: 4px solid #059669; margin-bottom: 0; background: #FFFFFF;">
             <p style="font-size: 12px; color: #6B7280; font-weight: bold; margin-bottom: 5px;">Mgmt Activities</p>
-            <p style="font-size: 24px; color: #4A7C59; font-weight: bold;">{{ stats.mgmt_activities }}</p>
+            <p style="font-size: 24px; color: #059669; font-weight: bold;">{{ stats.mgmt_activities }}</p>
         </div>
-    </div>
-
-    <!-- NEW: Management Report Download Button -->
-    <div style="margin-bottom: 25px; text-align: center;">
-        <a href="/dashboard/report" style="display: inline-block; background: #0A1E3D; color: #C9A84C; text-decoration: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; font-size: 14px; border: 1px solid #C9A84C; width: 100%; box-sizing: border-box;">
-            📥 Download Management HSE Report (PDF)
-        </a>
     </div>
 
     <!-- CHARTS SECTION -->
@@ -71,17 +78,13 @@
         <!-- Donut Chart -->
         <div style="flex: 1; min-width: 250px; background: #FFFFFF; padding: 15px; border-radius: 8px; border: 1px solid #E5E7EB;">
             <h3 style="font-size: 14px; color: #0A1E3D; text-align: center; margin-bottom: 10px;">Risk Distribution</h3>
-            <div style="position: relative; height: 200px; width: 100%;">
-                <canvas id="riskChart"></canvas>
-            </div>
+            <canvas id="riskChart"></canvas>
         </div>
         
         <!-- Bar Chart -->
         <div style="flex: 1; min-width: 250px; background: #FFFFFF; padding: 15px; border-radius: 8px; border: 1px solid #E5E7EB;">
             <h3 style="font-size: 14px; color: #0A1E3D; text-align: center; margin-bottom: 10px;">Top Risk Categories</h3>
-            <div style="position: relative; height: 200px; width: 100%;">
-                <canvas id="categoryChart"></canvas>
-            </div>
+            <canvas id="categoryChart"></canvas>
         </div>
     </div>
 
@@ -119,7 +122,6 @@
 
 <!-- CHART JS LOGIC -->
 <script>
-    // Data passed from Flask
     const riskDistData = {{ risk_dist | tojson }};
     const topCategoriesData = {{ top_categories | tojson }};
 
@@ -137,14 +139,13 @@
         },
         options: {
             responsive: true,
-            maintainAspectRatio: false,
             plugins: {
                 legend: { position: 'bottom' }
             }
         }
     });
 
-    // 2. Render Horizontal Bar Chart
+    // 2. Render Bar Chart (Horizontal)
     const labels = topCategoriesData.map(item => item.category);
     const counts = topCategoriesData.map(item => item.count);
     
@@ -156,14 +157,13 @@
             datasets: [{
                 label: 'Number of Hazards',
                 data: counts,
-                backgroundColor: '#0A1E3D', // Navy
+                backgroundColor: '#0A1E3D',
                 borderRadius: 4
             }]
         },
         options: {
-            indexAxis: 'y', // THIS MAKES IT HORIZONTAL
+            indexAxis: 'y',
             responsive: true,
-            maintainAspectRatio: false,
             plugins: {
                 legend: { display: false }
             },

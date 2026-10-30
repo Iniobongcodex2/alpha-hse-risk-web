@@ -25,23 +25,23 @@
             background: #F3F4F6;
             color: #0F1E3D;
             min-height: 100vh;
-            padding-bottom: 70px; /* space for bottom nav */
+            padding-bottom: 70px;
         }
 
         /* ---- DARK MODE THEME ---- */
         body.dark-mode {
-            background: #0A1E3D !important; /* Navy Background */
+            background: #0A1E3D !important;
             color: #F3F4F6;
         }
         body.dark-mode .card {
-            background: #1A4B8C !important; /* Blue Cards */
+            background: #1A4B8C !important;
             color: #FFFFFF;
         }
         body.dark-mode h2, body.dark-mode h3, body.dark-mode p {
             color: #FFFFFF !important;
         }
         body.dark-mode .app-header {
-            background: #051024; /* Darker Navy */
+            background: #051024;
         }
 
         /* ---- TOP HEADER ---- */
@@ -84,7 +84,7 @@
             display: flex;
             z-index: 100;
             box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
-            overflow-x: auto; /* Allows scrolling if too many tabs on small screens */
+            overflow-x: auto;
         }
         .app-nav a {
             flex: 1;
@@ -151,7 +151,6 @@
 
     <div class="app-header">
         <h1>{% block header_title %}ALPHA HSE RISK{% endblock %}</h1>
-        <!-- Dark Mode Toggle -->
         <button onclick="toggleDarkMode()" style="position: absolute; right: 15px; background: none; border: none; font-size: 20px; cursor: pointer;">🌙</button>
     </div>
 
@@ -183,13 +182,11 @@
             <span>History</span>
         </a>
         
-        <!-- Observations Tab -->
         <a href="/observations" class="{% if active == 'observations' %}active{% endif %}">
             <span class="nav-icon">📝</span>
             <span>Observe</span>
         </a>
 
-        <!-- NEW: Management Tab -->
         {% if session.get('role_id') in (2, 3, 4) %}
         <a href="/management-engagement" class="{% if active == 'management' %}active{% endif %}">
             <span class="nav-icon">👔</span>
@@ -211,7 +208,6 @@
     </nav>
 
     <script>
-        // ---- Dark Mode Logic ----
         function toggleDarkMode() {
             document.body.classList.toggle('dark-mode');
             if (document.body.classList.contains('dark-mode')) {
@@ -226,7 +222,6 @@
     </script>
 
     <script>
-        // ---- Service Worker Registration ----
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js')
@@ -237,81 +232,35 @@
     </script>
 
     <script>
-        // ---- Auto-sync pending assessments ----
         async function syncPendingAssessments() {
             if (!navigator.onLine) return;
-
             let queue = [];
-            try {
-                queue = JSON.parse(localStorage.getItem('alpha_pending_assessments') || '[]');
-            } catch (e) {
-                return;
-            }
-
+            try { queue = JSON.parse(localStorage.getItem('alpha_pending_assessments') || '[]'); } catch (e) { return; }
             if (queue.length === 0) return;
-
-            console.log(`Starting sync of ${queue.length} pending assessments...`);
             let remaining = [];
             let syncedCount = 0;
-
             for (let item of queue) {
                 try {
                     let formData = new FormData();
                     for (let key in item) {
                         if (key !== 'saved_at') {
-                            if (Array.isArray(item[key])) {
-                                item[key].forEach(val => formData.append(key, val));
-                            } else {
-                                formData.append(key, item[key]);
-                            }
+                            if (Array.isArray(item[key])) { item[key].forEach(val => formData.append(key, val)); } 
+                            else { formData.append(key, item[key]); }
                         }
                     }
-
-                    let response = await fetch('/new', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    if (response.redirected && response.url.includes('/login')) {
-                        console.log('Session expired. Pausing sync.');
-                        remaining.push(item);
-                        continue;
-                    }
-
-                    if (response.ok) {
-                        syncedCount++;
-                    } else {
-                        remaining.push(item);
-                    }
-                } catch (err) {
-                    console.error('Sync failed for item:', err);
-                    remaining.push(item);
-                }
+                    let response = await fetch('/new', { method: 'POST', body: formData });
+                    if (response.redirected && response.url.includes('/login')) { remaining.push(item); continue; }
+                    if (response.ok) { syncedCount++; } else { remaining.push(item); }
+                } catch (err) { remaining.push(item); }
             }
-
             localStorage.setItem('alpha_pending_assessments', JSON.stringify(remaining));
-
             if (syncedCount > 0) {
-                console.log(`Successfully synced ${syncedCount} assessments.`);
-                if (window.location.pathname === '/dashboard' || window.location.pathname === '/history') {
-                    location.reload();
-                }
+                if (window.location.pathname === '/dashboard' || window.location.pathname === '/history') { location.reload(); }
             }
         }
-
         document.addEventListener('DOMContentLoaded', syncPendingAssessments);
-
-        window.addEventListener('online', () => {
-            console.log('Connection restored! Attempting sync...');
-            syncPendingAssessments();
-        });
-
-        setInterval(() => {
-            if (navigator.onLine) {
-                syncPendingAssessments();
-            }
-        }, 10000);
+        window.addEventListener('online', syncPendingAssessments);
+        setInterval(() => { if (navigator.onLine) syncPendingAssessments(); }, 10000);
     </script>
-
 </body>
 </html>

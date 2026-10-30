@@ -468,6 +468,15 @@ def management_report():
 
     user_org = session.get("organization_name", "Unknown")
     
+    # 1. Get the dates from the form
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    # If no dates are provided, default to today
+    if not start_date or not end_date:
+        start_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        end_date = start_date
+    
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -484,28 +493,32 @@ def management_report():
         
         cursor = conn.cursor()
         
-        # 1. Fetch KPIs
+        # 2. Fetch KPIs using the date range
         stats = {"obs": 0, "open_actions": 0, "overdue_actions": 0, "mgmt": 0}
         today_date = datetime.datetime.now().strftime("%Y-%m-%d")
         
-        cursor.execute(f"SELECT COUNT(*) FROM observations WHERE organization = {q}", (user_org,))
+        # Observations raised within the date range
+        cursor.execute(f"SELECT COUNT(*) FROM observations WHERE organization = {q} AND date_reported >= {q} AND date_reported <= {q}", (user_org, start_date + " 00:00:00", end_date + " 23:59:59"))
         stats["obs"] = cursor.fetchone()[0]
         
+        # Open actions (current snapshot)
         cursor.execute(f"SELECT COUNT(*) FROM corrective_actions WHERE organization = {q} AND status IN ('Open', 'In Progress')", (user_org,))
         stats["open_actions"] = cursor.fetchone()[0]
         
+        # Overdue actions (current snapshot)
         cursor.execute(f"SELECT COUNT(*) FROM corrective_actions WHERE organization = {q} AND status IN ('Open', 'In Progress') AND due_date < {q}", (user_org, today_date))
         stats["overdue_actions"] = cursor.fetchone()[0]
         
-        cursor.execute(f"SELECT COUNT(*) FROM mgmt_activities WHERE organization = {q}", (user_org,))
+        # Management activities within the date range
+        cursor.execute(f"SELECT COUNT(*) FROM mgmt_activities WHERE organization = {q} AND activity_date >= {q} AND activity_date <= {q}", (user_org, start_date, end_date))
         stats["mgmt"] = cursor.fetchone()[0]
 
-        # 2. Fetch Open/Overdue Actions
+        # 3. Fetch Open/Overdue Actions
         cursor.execute(f"SELECT action_desc, assigned_to, due_date, status FROM corrective_actions WHERE organization = {q} AND status IN ('Open', 'In Progress') ORDER BY due_date ASC LIMIT 15", (user_org,))
         open_actions = cursor.fetchall()
 
-        # 3. Fetch Recent Observations
-        cursor.execute(f"SELECT reference, category, priority, date_reported FROM observations WHERE organization = {q} ORDER BY id DESC LIMIT 10", (user_org,))
+        # 4. Fetch Observations within the date range
+        cursor.execute(f"SELECT reference, category, priority, date_reported FROM observations WHERE organization = {q} AND date_reported >= {q} AND date_reported <= {q} ORDER BY id DESC LIMIT 10", (user_org, start_date + " 00:00:00", end_date + " 23:59:59"))
         recent_obs = cursor.fetchall()
 
         cursor.close()
@@ -530,7 +543,8 @@ def management_report():
 
         elements = [
             Paragraph("ALPHA HSE RISK - MANAGEMENT REPORT", title_style),
-            Paragraph(f"Organization: {user_org} | Date: {datetime.datetime.now().strftime('%Y-%m-%d')}", sub_style),
+            # Updated header to show the date range
+            Paragraph(f"Organization: {user_org} | Period: {start_date} to {end_date}", sub_style),
             HRFlowable(width="100%", thickness=1, color=navy, spaceAfter=10)
         ]
 
@@ -593,7 +607,7 @@ def management_report():
             ]))
             elements.append(obs_table)
         else:
-            elements.append(Paragraph("No observations recorded.", cell_style))
+            elements.append(Paragraph("No observations recorded in this period.", cell_style))
 
         # Watermark & Footer
         def add_watermark(canvas, doc):
@@ -613,7 +627,7 @@ def management_report():
         doc.build(elements, onFirstPage=add_watermark, onLaterPages=add_watermark)
         buffer.seek(0)
 
-        filename = f"Management_Report_{user_org.replace(' ', '_')}_{datetime.datetime.now().strftime('%Y%m%d')}.pdf"
+        filename = f"Management_Report_{user_org.replace(' ', '_')}_{start_date}_to_{end_date}.pdf"
         return send_file(buffer, as_attachment=True, download_name=filename, mimetype="application/pdf")
 
     except Exception as e:

@@ -1,7 +1,7 @@
 # ============================================
 # ALPHA HSE RISK — WEB APP
 # ============================================
-from flask import Flask, render_template, request, redirect, url_for, session, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, send_file, jsonify
 import sqlite3
 import psycopg2
 import psycopg2.extras
@@ -18,9 +18,13 @@ load_dotenv()
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 import hmac
+import json
+from groq import Groq
+
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key-later-2026"
 app.permanent_session_lifetime = datetime.timedelta(days=30)
+csrf = CSRFProtect(app)
 
 # --- ADD THESE TWO LINES ---
 csrf = CSRFProtect(app)
@@ -1822,6 +1826,63 @@ def update_action(action_id):
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
+@app.route("/ai-suggest", methods=["POST"])
+def ai_suggest():
+    if "username" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    hazard_description = data.get("description", "")
+    
+    if not hazard_description:
+        return jsonify({"error": "Description required"}), 400
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        return jsonify({"error": "AI API key missing on server"}), 500
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        
+        prompt = f"""
+        You are a Senior HSE (Health, Safety, and Environment) Professional. 
+        A worker has reported the following hazard: "{hazard_description}"
+        
+        Please analyze this and provide:
+        1. The most appropriate Observation Category (Health & Safety, Quality, Environmental, Occupational Health).
+        2. The Observation Type (Unsafe Condition, Unsafe Act, Near Miss, etc.).
+        3. A suggested Severity Score (1-5).
+        4. A suggested Likelihood Score (1-5).
+        5. Practical Corrective Actions (short, bulleted list).
+        
+        Format the response as JSON only, like this:
+        {{
+            "category": "...",
+            "obs_type": "...",
+            "severity": 3,
+            "likelihood": 4,
+            "corrective_action": "..."
+        }}
+        """
+        
+        message = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=500,
+            temperature=0.2,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        response_text = message.content[0].text
+        response_text = response_text.replace('```json', '').replace('```', '').strip()
+        
+        import json
+        result = json.loads(response_text)
+        
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"AI Error: {type(e).__name__}")
+        return jsonify({"error": "Failed to generate AI response"}), 500
 
 @app.route("/profile")
 def profile():
@@ -1921,6 +1982,55 @@ def cron_check_overdue():
         return "Internal Error", 500
     finally:
         if conn: conn.close()
+@app.route("/api/generate-controls", methods=["POST"])
+def generate_ai_controls():
+    if "username" not in session:
+        return json.dumps({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    hazard_description = data.get("description", "").strip()
+    
+    if not hazard_description:
+        return json.dumps({"error": "No description provided"}), 400
+
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return json.dumps({"error": "AI API key is missing on the server."}), 500
+
+    try:
+        client = Groq(api_key=api_key)
+        
+        prompt = f"""
+        You are an expert HSE (Health, Safety, and Environment) Consultant. 
+        A worker has reported the following hazard:
+        "{hazard_description}"
+
+        Please provide a JSON response with exactly these keys:
+        - "severity": A number from 1 to 5 (5 is fatal/major, 1 is minor).
+        - "likelihood": A number from 1 to 5 (5 is almost certain, 1 is rare).
+        - "controls": A short, professional paragraph of 3-4 practical control measures to fix this hazard.
+
+        Only return the raw JSON. Do not include markdown formatting or extra text.
+        """
+
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-8b-8192",
+            temperature=0.2,
+        )
+
+        response_text = chat_completion.choices[0].message.content
+        
+        # Clean up the response in case the AI adds markdown backticks
+        response_text = response_text.replace("```json", "").replace("```", "").strip()
+        
+        ai_data = json.loads(response_text)
+        
+        return json.dumps(ai_data), 200, {'Content-Type': 'application/json'}
+
+    except Exception as e:
+        print(f"AI Error: {type(e).__name__}")
+        return json.dumps({"error": "Failed to generate AI response. Please try again."}), 500, {'Content-Type': 'application/json'}        
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)

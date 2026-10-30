@@ -5,6 +5,8 @@
 {% block content %}
 
 <form method="POST" action="/raise-observation">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
     <div class="card">
         <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Observation Details</h2>
 
@@ -50,9 +52,76 @@
             <option value="Critical">Critical (Stop Work)</option>
         </select>
 
-        <label style="font-size:13px; color:#6B7280; font-weight:600;">Detailed Description</label>
-        <textarea name="description" placeholder="Describe what you observed, the potential consequence, and any immediate actions taken." required
+        <!-- AI Auto-Fill Button -->
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <label style="font-size:13px; color:#6B7280; font-weight:600;">Detailed Description</label>
+            <button type="button" onclick="generateAISuggestion()" id="ai-btn" style="background:#1A4B8C; color:#FFF; border:none; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:6px;">
+                ✨ AI Auto-Fill
+            </button>
+        </div>
+        <textarea name="description" id="description" placeholder="Describe what you observed, the potential consequence, and any immediate actions taken." required
                   style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:120px;"></textarea>
+
+        <!-- Hidden fields for AI to fill -->
+        <input type="hidden" name="ai_severity" id="ai_severity">
+        <input type="hidden" name="ai_likelihood" id="ai_likelihood">
+        <input type="hidden" name="ai_controls" id="ai_controls">
+
+        <script>
+            async function generateAISuggestion() {
+                const descField = document.getElementById('description');
+                const description = descField.value.trim();
+                const btn = document.getElementById('ai-btn');
+
+                if (!description) {
+                    alert("Please type a short description of the hazard first, then click AI Auto-Fill.");
+                    return;
+                }
+
+                const originalText = btn.innerHTML;
+                btn.innerHTML = "⏳ Analyzing...";
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch('/api/generate-controls', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify({ description: description })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        // Calculate priority based on AI's severity and likelihood
+                        const score = data.severity * data.likelihood;
+                        let priority = "Low";
+                        if (score >= 16) priority = "Critical";
+                        else if (score >= 10) priority = "High";
+                        else if (score >= 5) priority = "Medium";
+                        
+                        // Auto-select the priority dropdown
+                        document.querySelector('select[name="priority"]').value = priority;
+                        
+                        // Store the controls in a hidden field to show the user
+                        document.getElementById('ai_controls').value = data.controls;
+                        
+                        // Show the user the AI's suggestion
+                        alert("✨ AI Analysis Complete!\n\nSeverity: " + data.severity + "\nLikelihood: " + data.likelihood + "\nPriority set to: " + priority + "\n\nSuggested Controls:\n" + data.controls);
+                    } else {
+                        alert("AI Error: " + data.error);
+                    }
+                } catch (error) {
+                    console.error(error);
+                    alert("Failed to connect to AI.");
+                } finally {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
+            }
+        </script>
     </div>
 
     <button type="submit" class="btn-primary" style="margin-bottom: 20px;">

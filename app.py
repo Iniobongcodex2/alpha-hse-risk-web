@@ -137,6 +137,7 @@ def setup_database():
     is_postgres = os.environ.get('DATABASE_URL') is not None
     id_type = "SERIAL PRIMARY KEY" if is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
 
+    # 1. CORE TABLES
     cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS users (
             id {id_type}, username TEXT NOT NULL UNIQUE, full_name TEXT,
@@ -173,8 +174,6 @@ def setup_database():
             target_id TEXT, details TEXT
         )
     """)
-    
-    # NEW TABLE: Observations
     cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS observations (
             id {id_type}, reference TEXT UNIQUE, organization TEXT,
@@ -183,8 +182,6 @@ def setup_database():
             priority TEXT, status TEXT, date_reported TEXT
         )
     """)
-    
-    # NEW TABLE: Corrective Actions
     cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS corrective_actions (
             id {id_type}, observation_ref TEXT, organization TEXT,
@@ -192,8 +189,6 @@ def setup_database():
             status TEXT, date_assigned TEXT
         )
     """)
-    
-    # NEW TABLE: Management Activities
     cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS mgmt_activities (
             id {id_type}, reference TEXT UNIQUE, organization TEXT,
@@ -201,8 +196,6 @@ def setup_database():
             location TEXT, findings TEXT, status TEXT
         )
     """)
-
-    # NEW TABLE: Notification Log (Stage A)
     cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS notification_log (
             id {id_type}, 
@@ -215,8 +208,6 @@ def setup_database():
             UNIQUE(action_id, notification_type, target_date)
         )
     """)
-
-    # NEW TABLE: Team Discussion Comments (FIXED & MOVED HERE)
     cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS comments (
             id {id_type}, observation_ref TEXT, organization TEXT,
@@ -224,7 +215,7 @@ def setup_database():
         )
     """)
 
-    # IDEMPOTENT MIGRATIONS (Safe for existing databases)
+    # 2. IDEMPOTENT MIGRATIONS (Safe additions to existing tables)
     if is_postgres:
         cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='corrective_actions'")
         existing_cols = [row[0] for row in cursor.fetchall()]
@@ -242,8 +233,36 @@ def setup_database():
         cursor.execute("ALTER TABLE corrective_actions ADD COLUMN verified_date TEXT")
     if 'completed_by' not in existing_cols:
         cursor.execute("ALTER TABLE corrective_actions ADD COLUMN completed_by TEXT")
+    if 'source_type' not in existing_cols:
+        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN source_type TEXT DEFAULT 'Observation'")
+    if 'source_id' not in existing_cols:
+        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN source_id INTEGER")
 
-    # Seed Roles
+    # 3. STAGE 21, 22, 23 NEW TABLES
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS facilities (
+            id {id_type}, organization TEXT, name TEXT,
+            location TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS inspections (
+            id {id_type}, reference TEXT UNIQUE, organization TEXT,
+            facility_name TEXT, inspector TEXT, inspection_date TEXT,
+            score INTEGER, findings TEXT, status TEXT
+        )
+    """)
+    
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS incidents (
+            id {id_type}, reference TEXT UNIQUE, organization TEXT,
+            facility_name TEXT, reporter TEXT, incident_date TEXT,
+            incident_type TEXT, description TEXT, root_cause TEXT, status TEXT
+        )
+    """)
+
+    # 4. SEED DATA
     roles = [
         ("HSE Officer", "Creates and edits assessments"),
         ("HSE Supervisor", "Reviews team assessments"),
@@ -257,7 +276,6 @@ def setup_database():
         else:
             cursor.execute("INSERT OR IGNORE INTO roles (name, description) VALUES (?, ?)", (role_name, description))
 
-    # Seed Admin User
     cursor.execute("SELECT COUNT(*) FROM users")
     row = cursor.fetchone()
     
@@ -286,32 +304,6 @@ def setup_database():
                 INSERT INTO users (username, full_name, email, role_id, organization_name, is_active, password_hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, ("God'stime", "Iniobong Eyibio", "godstimeisthebest55@gmail.com", admin_role_id, "Shell oil", 1, password_hash))
-            
-    # ============================================
-    # STAGE 21: Facility Management & Action Refactor
-    # ============================================
-    
-    # 1. Create Facilities Table
-    cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS facilities (
-            id {id_type}, organization TEXT, name TEXT,
-            location TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # 2. Safely add 'source_type' and 'source_id' to corrective_actions
-    # (This allows actions to link to Observations, Inspections, or Incidents)
-    if is_postgres:
-        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='corrective_actions'")
-        action_cols = [row[0] for row in cursor.fetchall()]
-    else:
-        cursor.execute("PRAGMA table_info(corrective_actions)")
-        action_cols = [row[1] for row in cursor.fetchall()]
-
-    if 'source_type' not in action_cols:
-        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN source_type TEXT DEFAULT 'Observation'")
-    if 'source_id' not in action_cols:
-        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN source_id INTEGER")
 
     conn.commit()
     cursor.close()
@@ -2007,6 +1999,86 @@ def ai_suggest():
     except Exception as e:
         print(f"AI Error: {type(e).__name__}")
         return jsonify({"error": "Failed to generate AI response"}), 500
+@app.route("/inspections")
+def inspections_register():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    inspections = []
+    
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgres else conn.cursor()
+        cursor.execute(f"SELECT * FROM inspections WHERE organization = {q} ORDER BY id DESC", (user_org,))
+        
+        if is_postgres:
+            inspections = cursor.fetchall()
+        else:
+            conn.row_factory = sqlite3.Row
+            inspections = [dict(r) for r in cursor.fetchall()]
+            
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Inspection DB error: {type(e).__name__}")
+
+    return render_template("inspections.html", active="inspections", inspections=inspections)
+
+
+@app.route("/new-inspection", methods=["GET", "POST"])
+def new_inspection():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    facilities = []
+    
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        cursor = conn.cursor()
+        
+        if request.method == "POST":
+            facility_name = request.form.get("facility_name", "").strip()
+            inspection_date = request.form.get("inspection_date", "").strip()
+            findings = request.form.get("findings", "").strip()
+            score = request.form.get("score", "0").strip()
+            
+            reference = "INS-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            inspector = session.get("full_name", session.get("username"))
+            status = "Completed"
+            
+            cursor.execute(f"""
+                INSERT INTO inspections 
+                (reference, organization, facility_name, inspector, inspection_date, score, findings, status)
+                VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
+            """, (reference, user_org, facility_name, inspector, inspection_date, score, findings, status))
+            
+            conn.commit()
+            log_action(session.get("username"), "NEW_INSPECTION", "Inspection", reference, f"Inspected {facility_name}")
+            cursor.close()
+            conn.close()
+            return redirect(url_for("inspections_register"))
+            
+        # GET Request: Fetch facilities for the dropdown
+        cursor.execute(f"SELECT * FROM facilities WHERE organization = {q} ORDER BY name ASC", (user_org,))
+        if is_postgres:
+            facilities = cursor.fetchall()
+        else:
+            conn.row_factory = sqlite3.Row
+            facilities = [dict(r) for r in cursor.fetchall()]
+            
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Inspection Error: {type(e).__name__}")
+
+    return render_template("new_inspection.html", active="inspections", facilities=facilities)
 
 @app.route("/profile")
 def profile():
@@ -2157,5 +2229,106 @@ def generate_ai_controls():
         # This will print the exact error from Groq in your terminal
         print(f"GROQ API ERROR: {e}") 
         return {"error": "Failed to generate AI response. Check terminal for details."}, 500
+
+@app.route("/incidents")
+def incidents_register():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    incidents = []
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get("DATABASE_URL") is not None
+
+        if is_postgres:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            placeholder = "%s"
+        else:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            placeholder = "?"
+
+        cursor.execute(f"SELECT * FROM incidents WHERE organization = {placeholder} ORDER BY id DESC", (user_org,))
+        incidents = cursor.fetchall()
+
+    except Exception as e:
+        print(f"Incident DB error: {type(e).__name__}: {e}")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+    return render_template("incidents_register.html", active="incidents", incidents=incidents)
+
+
+@app.route("/new-incident", methods=["GET", "POST"])
+def new_incident():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    facilities = []
+    conn = None
+    cursor = None
+    error_message = None
+
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get("DATABASE_URL") is not None
+
+        if is_postgres:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            placeholder = "%s"
+        else:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            placeholder = "?"
+
+        if request.method == "POST":
+            facility_name = request.form.get("facility_name", "").strip()
+            incident_date = request.form.get("incident_date", "").strip()
+            incident_type = request.form.get("incident_type", "").strip()
+            description = request.form.get("description", "").strip()
+            root_cause = request.form.get("root_cause", "").strip()
+
+            if not all([facility_name, incident_date, incident_type, description]):
+                error_message = "Please complete all required incident fields."
+            else:
+                reference = "INC-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+                reporter = session.get("full_name", session.get("username"))
+                status = "Reported"
+
+                cursor.execute(f"""
+                    INSERT INTO incidents (reference, organization, facility_name, reporter, incident_date, incident_type, description, root_cause, status)
+                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+                """, (reference, user_org, facility_name, reporter, incident_date, incident_type, description, root_cause, status))
+                
+                conn.commit()
+                log_action(session.get("username"), "NEW_INCIDENT", "Incident", reference, f"Reported {incident_type} at {facility_name}")
+                return redirect(url_for("incidents_register"))
+
+        # GET request: Load facilities for the dropdown
+        cursor.execute(f"SELECT * FROM facilities WHERE organization = {placeholder} ORDER BY name ASC", (user_org,))
+        facilities = cursor.fetchall()
+
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"Incident error: {type(e).__name__}: {e}")
+        error_message = "An error occurred while processing the incident."
+
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+    return render_template("new_incident.html", active="incidents", facilities=facilities, error=error_message)
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(
+        host="127.0.0.1",
+        port=5000,
+        debug=False
+    )

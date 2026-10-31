@@ -43,6 +43,16 @@
         body.dark-mode .app-header {
             background: #051024;
         }
+        body.dark-mode .app-nav {
+            background: #0A1E3D;
+            border-top: 1px solid #1A4B8C;
+        }
+        body.dark-mode .app-nav a {
+            color: #9CA3AF;
+        }
+        body.dark-mode .app-nav a.active {
+            color: #C9A961;
+        }
 
         /* ---- TOP HEADER ---- */
         .app-header {
@@ -185,6 +195,18 @@
         <a href="/observations" class="{% if active == 'observations' %}active{% endif %}">
             <span class="nav-icon">📝</span>
             <span>Observe</span>
+        </a>
+
+        <!-- Inspections Tab -->
+        <a href="/inspections" class="{% if active == 'inspections' %}active{% endif %}">
+            <span class="nav-icon">🔍</span>
+            <span>Inspect</span>
+        </a>
+
+        <!-- NEW: Incidents Tab -->
+        <a href="/incidents" class="{% if active == 'incidents' %}active{% endif %}">
+            <span class="nav-icon">🚨</span>
+            <span>Incident</span>
         </a>
 
         {% if session.get('role_id') in (2, 3, 4) %}

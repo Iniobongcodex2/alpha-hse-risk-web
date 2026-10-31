@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Report Incident — ALPHA HSE RISK{% endblock %}
+{% block header_title %}Report Incident{% endblock %}
+
+{% block content %}
+
+<form method="POST" action="/new-incident">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
+    <div class="card">
+        <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Incident Details</h2>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Select Facility</label>
+        <select name="facility_name" required style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+            <option value="">Select a facility...</option>
+            {% for f in facilities %}
+                <option value="{{ f.name }}">{{ f.name }}</option>
+            {% endfor %}
+        </select>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Date of Incident</label>
+        <input type="date" name="incident_date" required
+               style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Incident Type</label>
+        <select name="incident_type" required style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+            <option value="Near Miss">Near Miss</option>
+            <option value="First Aid Injury">First Aid Injury</option>
+            <option value="Medical Treatment Injury">Medical Treatment Injury</option>
+            <option value="Lost Time Injury">Lost Time Injury</option>
+            <option value="Property Damage">Property Damage</option>
+            <option value="Environmental Spill">Environmental Spill</option>
+        </select>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Description of Event</label>
+        <textarea name="description" placeholder="What happened? Who was involved?" required
+                  style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:100px;"></textarea>
+
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Root Cause (Initial)</label>
+        <textarea name="root_cause" placeholder="Why did this happen?" required
+                  style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:100px;"></textarea>
+    </div>
+
+    <button type="submit" class="btn-primary" style="margin-bottom: 20px; background:#DC2626;">
+        🚨 Submit Incident
+    </button>
+</form>
+
+{% endblock %}

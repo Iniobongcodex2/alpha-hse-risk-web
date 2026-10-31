@@ -1481,55 +1481,64 @@ def raise_observation():
         date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         status = "New"
 
+        email_addr = None
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+
         try:
             conn = get_db_connection()
-            is_postgres = os.environ.get('DATABASE_URL') is not None
             q = "%s" if is_postgres else "?"
             
             cursor = conn.cursor()
+            
+            # 1. Save the Observation
             cursor.execute(f"""
                 INSERT INTO observations
                 (reference, organization, reporter, department, location, category, obs_type, description, priority, status, date_reported)
                 VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
             """, (reference, organization, reporter, department, location, category, obs_type, description, priority, status, date_now))
             
+            # 2. Get the user email while the connection is open
+            cursor.execute(f"SELECT email FROM users WHERE username = {q} AND organization_name = {q}", (session.get("username"), organization))
+            user_row = cursor.fetchone()
+            if user_row:
+                email_addr = user_row['email'] if is_postgres else user_row[0]
+            
+            # 3. Commit and Close
             conn.commit()
-
-            # --- NEW: SEND OBSERVATION EMAIL ---
-            try:
-                cursor.execute(f"SELECT email FROM users WHERE username = {q} AND organization_name = {q}", (session.get("username"), organization))
-                user_row = cursor.fetchone()
-                
-                if user_row:
-                    email_addr = user_row['email'] if is_postgres else user_row['email']
-                    if email_addr:
-                        subject = f"Observation Logged: {reference}"
-                        safe_desc = html.escape(description)
-                        body = f"""
-                        <div style="font-family: Arial, sans-serif; padding: 20px; border-left: 5px solid #1A4B8C;">
-                            <h2 style="color: #0A1E3D;">New Observation Recorded</h2>
-                            <p><strong>Reference:</strong> {reference}</p>
-                            <p><strong>Category:</strong> {category} ({obs_type})</p>
-                            <p><strong>Priority:</strong> {priority}</p>
-                            <p><strong>Description:</strong> {safe_desc}</p>
-                            <br>
-                            <a href="https://alpha-hse-risk-web.onrender.com/observations" style="background: #0A1E3D; color: #C9A84C; padding: 10px 15px; text-decoration: none; border-radius: 5px; font-weight: bold;">View Observation</a>
-                        </div>
-                        """
-                        send_email_notification(email_addr, subject, body)
-            except Exception as mail_err:
-                print(f"Non-fatal observation email error: {type(mail_err).__name__}")
-            # -------------------------------------
-
             cursor.close()
             conn.close()
 
+            # 4. Log the action
             log_action(session.get("username"), "RAISE_OBSERVATION", "Observation", reference, f"Raised a {category} observation")
+
+            # 5. Send Email (Safe, after DB is closed)
+            if email_addr:
+                try:
+                    subject = f"Observation Logged: {reference}"
+                    safe_desc = html.escape(description)
+                    body = f"""
+                    <div style="font-family: Arial, sans-serif; padding: 20px; border-left: 5px solid #1A4B8C;">
+                        <h2 style="color: #0A1E3D;">New Observation Recorded</h2>
+                        <p><strong>Reference:</strong> {reference}</p>
+                        <p><strong>Category:</strong> {category} ({obs_type})</p>
+                        <p><strong>Priority:</strong> {priority}</p>
+                        <p><strong>Description:</strong> {safe_desc}</p>
+                        <br>
+                        <a href="https://alpha-hse-risk-web.onrender.com/observations" style="background: #0A1E3D; color: #C9A84C; padding: 10px 15px; text-decoration: none; border-radius: 5px; font-weight: bold;">View Observation</a>
+                    </div>
+                    """
+                    send_email_notification(email_addr, subject, body)
+                except Exception as mail_err:
+                    print(f"Non-fatal observation email error: {type(mail_err).__name__}")
+
             return redirect(url_for("observations_register"))
 
         except Exception as e:
+            if conn: conn.rollback()
+            if conn: conn.close()
             return render_template("raise_observation.html", active="observations", error=f"Save failed: {e}")
 
+    # GET request - load the form
     return render_template("raise_observation.html", active="observations")
 @app.route("/observation/<int:obs_id>/comment", methods=["POST"])
 def add_comment(obs_id):
@@ -2080,6 +2089,7 @@ def new_inspection():
 
     return render_template("new_inspection.html", active="inspections", facilities=facilities)
 
+
 @app.route("/profile")
 def profile():
     if "username" not in session:
@@ -2263,68 +2273,71 @@ def incidents_register():
 
     return render_template("incidents_register.html", active="incidents", incidents=incidents)
 
-
 @app.route("/new-incident", methods=["GET", "POST"])
 def new_incident():
     if "username" not in session:
         return redirect(url_for("login"))
 
     user_org = session.get("organization_name", "Unknown")
+    
+    # Fetch facilities for the dropdown
     facilities = []
-    conn = None
-    cursor = None
-    error_message = None
-
     try:
         conn = get_db_connection()
-        is_postgres = os.environ.get("DATABASE_URL") is not None
-
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgres else conn.cursor()
+        
+        cursor.execute(f"SELECT * FROM facilities WHERE organization = {q}", (user_org,))
         if is_postgres:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            placeholder = "%s"
+            facilities = cursor.fetchall()
         else:
             conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            placeholder = "?"
-
-        if request.method == "POST":
-            facility_name = request.form.get("facility_name", "").strip()
-            incident_date = request.form.get("incident_date", "").strip()
-            incident_type = request.form.get("incident_type", "").strip()
-            description = request.form.get("description", "").strip()
-            root_cause = request.form.get("root_cause", "").strip()
-
-            if not all([facility_name, incident_date, incident_type, description]):
-                error_message = "Please complete all required incident fields."
-            else:
-                reference = "INC-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-                reporter = session.get("full_name", session.get("username"))
-                status = "Reported"
-
-                cursor.execute(f"""
-                    INSERT INTO incidents (reference, organization, facility_name, reporter, incident_date, incident_type, description, root_cause, status)
-                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
-                """, (reference, user_org, facility_name, reporter, incident_date, incident_type, description, root_cause, status))
-                
-                conn.commit()
-                log_action(session.get("username"), "NEW_INCIDENT", "Incident", reference, f"Reported {incident_type} at {facility_name}")
-                return redirect(url_for("incidents_register"))
-
-        # GET request: Load facilities for the dropdown
-        cursor.execute(f"SELECT * FROM facilities WHERE organization = {placeholder} ORDER BY name ASC", (user_org,))
-        facilities = cursor.fetchall()
-
+            facilities = [dict(r) for r in cursor.fetchall()]
+        cursor.close()
+        conn.close()
     except Exception as e:
-        if conn: conn.rollback()
-        print(f"Incident error: {type(e).__name__}: {e}")
-        error_message = "An error occurred while processing the incident."
+        print(f"Error fetching facilities: {type(e).__name__}")
 
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
+    if request.method == "POST":
+        organization = session.get("organization_name", "Unknown")
+        reporter = session.get("full_name", session.get("username"))
+        
+        facility_name = request.form.get("facility_name", "").strip()
+        incident_date = request.form.get("incident_date", "").strip()
+        incident_type = request.form.get("incident_type", "").strip()
+        description = request.form.get("description", "").strip()
+        root_cause = request.form.get("root_cause", "").strip()
 
-    return render_template("new_incident.html", active="incidents", facilities=facilities, error=error_message)
+        reference = "INC-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        status = "Reported"
 
+        try:
+            conn = get_db_connection()
+            is_postgres = os.environ.get('DATABASE_URL') is not None
+            q = "%s" if is_postgres else "?"
+            
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                INSERT INTO incidents
+                (reference, organization, facility_name, reporter, incident_date, incident_type, description, root_cause, status)
+                VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
+            """, (reference, organization, facility_name, reporter, incident_date, incident_type, description, root_cause, status))
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            # This is the part that was missing!
+            log_action(session.get("username"), "REPORT_INCIDENT", "Incident", reference, f"Reported a {incident_type}")
+            return redirect(url_for("incidents_register"))
+
+        except Exception as e:
+            # If the save fails, show the form again with an error
+            return render_template("new_incident.html", active="incidents", facilities=facilities, error=f"Save failed: {e}")
+
+    # This handles the normal page load (GET request)
+    return render_template("new_incident.html", active="incidents", facilities=facilities, error=None)
 
 if __name__ == "__main__":
     app.run(

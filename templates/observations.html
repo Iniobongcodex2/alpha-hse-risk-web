@@ -1,44 +1,180 @@
 {% extends "base.html" %}
-{% block title %}Observation Register — ALPHA HSE RISK{% endblock %}
-{% block header_title %}Observation Register{% endblock %}
+{% block title %}Observation Details — ALPHA HSE RISK{% endblock %}
+{% block header_title %}Observation Details{% endblock %}
 
 {% block content %}
 
-<div class="card">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-        <h2 style="font-size:16px; color:#0F1E3D;">All Observations ({{ observations|length }})</h2>
-        <a href="/raise-observation" style="background:#0A1E3D; color:#C9A84C; text-decoration:none; padding:8px 12px; border-radius:6px; font-weight:bold; font-size:13px;">+ New</a>
+<!-- Observation Details Card -->
+<div class="card" style="border-left: 4px solid #0A1E3D;">
+    <h2 style="font-size:15px; color:#0A1E3D; margin-bottom:8px;">{{ obs.reference }}</h2>
+    <p style="font-size:12px; color:#6B7280; margin-bottom:12px;">Reported: {{ obs.date_reported }} | By: {{ obs.reporter }}</p>
+    
+    <div style="margin-bottom:10px;">
+        <span style="font-size:12px; font-weight:bold; color:#1A4B8C; background:#E0F2FE; padding:2px 6px; border-radius:4px;">{{ obs.category }}</span>
+        <span style="font-size:12px; color:#4B5563; margin-left:5px;">{{ obs.obs_type }}</span>
+        <span style="font-size:12px; font-weight:bold; color: {% if obs.priority == 'Critical' %}#DC2626{% elif obs.priority == 'High' %}#F97316{% else %}#059669{% endif %}; float:right;">{{ obs.priority }} Priority</span>
     </div>
 
-    {% for obs in observations %}
-    <div style="border: 1px solid #E5E7EB; border-radius: 8px; padding: 15px; margin-bottom: 12px; background: #F8FAFC;">
-        <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
-            
-            <!-- CLICKABLE LINK ADDED HERE -->
-            <a href="/observation/{{ obs.id }}" style="font-weight:bold; color:#0A1E3D; font-size:13px; text-decoration:none;">{{ obs.reference }}</a>
-            
-            <span style="font-size:11px; color:#6B7280;">{{ obs.date_reported }}</span>
+    <p style="font-size:14px; color:#1F2937; margin-bottom:15px;">{{ obs.description }}</p>
+
+    <div style="background:#F3F4F6; padding:10px; border-radius:6px; font-size:12px;">
+        <strong>Department:</strong> {{ obs.department }} <br>
+        <strong>Location:</strong> {{ obs.location }} <br>
+        <strong>Status:</strong> {{ obs.status }}
+    </div>
+</div>
+
+<!-- Corrective Actions List -->
+<div class="card">
+    <h3 style="font-size:15px; color:#0F1E3D; margin-bottom:15px;">Corrective Actions</h3>
+    
+    {% for action in actions %}
+    <div style="border:1px solid #E5E7EB; padding:15px; border-radius:8px; margin-bottom:15px; background:#FFFFFF;">
+        
+        <!-- Display Mode -->
+        <div style="margin-bottom: 10px;">
+            <p style="font-size:14px; font-weight:bold; color:#0A1E3D; margin-bottom:5px;">{{ action.action_desc }}</p>
+            <p style="font-size:12px; color:#4B5563;">
+                Assigned to: <strong>{{ action.assigned_to }}</strong> | Due: <strong>{{ action.due_date }}</strong>
+            </p>
         </div>
-        
-        <div style="margin-bottom: 8px;">
-            <span style="font-size:12px; font-weight:bold; color:#1A4B8C; background:#E0F2FE; padding:2px 6px; border-radius:4px;">{{ obs.category }}</span>
-            <span style="font-size:12px; color:#4B5563; margin-left: 5px;">{{ obs.obs_type }}</span>
-        </div>
-        
-        <p style="font-size: 13px; color: #4B5563; margin-bottom: 10px;">{{ obs.description }}</p>
-        
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:12px; color:#6B7280;">Reported by: {{ obs.reporter }}</span>
-            <span style="font-size:12px; font-weight:bold; color: {% if obs.priority == 'Critical' %}#DC2626{% elif obs.priority == 'High' %}#F97316{% else %}#059669{% endif %};">
-                {{ obs.priority }}
+
+        <!-- Status Badge & Meta -->
+        <div style="margin-bottom: 15px; font-size:11px;">
+            <span style="padding:4px 8px; border-radius:4px; font-weight:bold; 
+                {% if action.status == 'Open' %}background:#FEE2E2; color:#DC2626;
+                {% elif action.status == 'In Progress' %}background:#FEF3C7; color:#D97706;
+                {% elif action.status == 'Completed' %}background:#D1FAE5; color:#059669;
+                {% else %}background:#E0F2FE; color:#075985;{% endif %}">
+                {{ action.status }}
             </span>
+            
+            {% if action.completed_date %}
+                <span style="color:#6B7280; display:block; margin-top:5px;">
+                    ✅ Completed by {{ action.completed_by }} on {{ action.completed_date }}
+                </span>
+            {% endif %}
+            {% if action.verified_by %}
+                <span style="color:#059669; display:block; margin-top:2px;">
+                    🛡️ Verified by {{ action.verified_by }} on {{ action.verified_date }}
+                </span>
+            {% endif %}
         </div>
+
+        {% if action.completion_notes %}
+            <p style="font-size:12px; color:#4B5563; background:#F8FAFC; padding:8px; border-radius:4px; margin-bottom:15px;">
+                <strong>Notes:</strong> {{ action.completion_notes }}
+            </p>
+        {% endif %}
+
+        <!-- Toggle Edit Form -->
+        <details style="margin-bottom: 10px;">
+            <summary style="font-size:11px; color:#1A4B8C; cursor:pointer; font-weight:bold;">✏️ Edit Action Details</summary>
+            <form method="POST" action="/action/{{ action.id }}/edit" style="background:#FFF; padding:10px; margin-top:5px; border:1px solid #CBD5E1; border-radius:6px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label style="font-size:11px; color:#6B7280; font-weight:bold;">Description</label>
+                <input type="text" name="action_desc" value="{{ action.action_desc }}" required style="width:100%; padding:6px; margin-bottom:8px; font-size:12px; border:1px solid #CBD5E1; border-radius:4px;">
+                
+                <label style="font-size:11px; color:#6B7280; font-weight:bold;">Assignee</label>
+                <input type="text" name="assigned_to" value="{{ action.assigned_to }}" required style="width:100%; padding:6px; margin-bottom:8px; font-size:12px; border:1px solid #CBD5E1; border-radius:4px;">
+                
+                <label style="font-size:11px; color:#6B7280; font-weight:bold;">Due Date</label>
+                <input type="date" name="due_date" value="{{ action.due_date }}" required style="width:100%; padding:6px; margin-bottom:8px; font-size:12px; border:1px solid #CBD5E1; border-radius:4px;">
+                
+                <button type="submit" style="background:#059669; color:#FFF; border:none; padding:6px; border-radius:4px; font-size:11px; cursor:pointer; width:100%;">Save Changes</button>
+            </form>
+        </details>
+
+        <!-- Status Update Form -->
+        <form method="POST" action="/action/{{ action.id }}/update" style="background:#F8FAFC; padding:10px; border-radius:6px; border:1px solid #E2E8F0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="existing_completed_date" value="{{ action.completed_date or '' }}">
+            <input type="hidden" name="existing_completed_by" value="{{ action.completed_by or '' }}">
+            <input type="hidden" name="existing_verified_date" value="{{ action.verified_date or '' }}">
+            
+            <label style="font-size:11px; color:#6B7280; font-weight:bold;">Update Status</label>
+            <select name="status" required style="width:100%; padding:8px; margin:4px 0 10px; border:1px solid #CBD5E1; border-radius:4px; font-size:13px;">
+                <option value="Open" {% if action.status == 'Open' %}selected{% endif %}>Open</option>
+                <option value="In Progress" {% if action.status == 'In Progress' %}selected{% endif %}>In Progress</option>
+                <option value="Completed" {% if action.status == 'Completed' %}selected{% endif %}>Completed</option>
+                
+                {% if session.get('role_id') in (2, 3, 4) %}
+                <option value="Verified/Closed" 
+                    {% if action.status == 'Verified/Closed' %}selected{% endif %}
+                    {% if action.status not in ('Completed', 'Verified/Closed') %}disabled{% endif %}>
+                    Verified / Closed {% if action.status not in ('Completed', 'Verified/Closed') %}(Complete first){% endif %}
+                </option>
+                {% endif %}
+            </select>
+
+            <label style="font-size:11px; color:#6B7280; font-weight:bold;">Completion Notes / Evidence</label>
+            <input type="text" name="completion_notes" value="{{ action.completion_notes or '' }}" placeholder="e.g. Harness issued." style="width:100%; padding:8px; margin:4px 0 10px; border:1px solid #CBD5E1; border-radius:4px; font-size:13px;">
+
+            <button type="submit" style="background:#1A4B8C; color:#FFFFFF; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; width:100%; font-size:12px;">
+                Update Status
+            </button>
+        </form>
     </div>
     {% else %}
-    <div style="text-align: center; padding: 20px; color: #6B7280; font-size: 14px;">
-        No observations raised yet. Click "+ New" to start.
-    </div>
+    <p style="font-size:13px; color:#6B7280; margin-bottom:15px;">No actions assigned yet.</p>
     {% endfor %}
 </div>
+
+<!-- Assign New Action Form -->
+<div class="card" style="background:#F8FAFC; border:1px solid #E2E8F0;">
+    <h3 style="font-size:15px; color:#0F1E3D; margin-bottom:15px;">Assign New Action</h3>
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label style="font-size:12px; color:#6B7280; font-weight:600;">Action Required</label>
+        <textarea name="action_desc" required placeholder="Describe the corrective action needed..." style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px; min-height:60px;"></textarea>
+
+        <label style="font-size:12px; color:#6B7280; font-weight:600;">Assign To (Eligible Users)</label>
+        <select name="assigned_to" required style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px; background:#FFFFFF;">
+            <option value="">Select a user...</option>
+            {% for u in users %}
+                <option value="{{ u.full_name }}">{{ u.full_name }}</option>
+            {% endfor %}
+        </select>
+
+        <label style="font-size:12px; color:#6B7280; font-weight:600;">Due Date</label>
+        <input type="date" name="due_date" required style="width:100%; padding:10px; margin:6px 0 15px; border:1px solid #CBD5E1; border-radius:6px;">
+
+        <button type="submit" style="background:#0A1E3D; color:#C9A84C; border:none; padding:12px; border-radius:6px; font-weight:bold; width:100%; cursor:pointer;">
+            📋 Assign Action
+        </button>
+    </form>
+</div>
+
+<!-- NEW: Team Discussion -->
+<div class="card" style="margin-top: 20px;">
+    <h3 style="font-size:15px; color:#0F1E3D; margin-bottom:15px; display:flex; align-items:center; gap:5px;">
+        💬 Team Discussion
+    </h3>
+    
+    {% if comments %}
+        {% for comment in comments %}
+        <div style="border-left: 3px solid #1A4B8C; background: #F8FAFC; padding: 10px 15px; margin-bottom: 10px; border-radius: 4px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <strong style="font-size: 13px; color: #0A1E3D;">{{ comment.author }}</strong>
+                <span style="font-size: 11px; color: #6B7280;">{{ comment.date_posted }}</span>
+            </div>
+            <p style="font-size: 13px; color: #1F2937; margin: 0;">{{ comment.message }}</p>
+        </div>
+        {% endfor %}
+    {% else %}
+        <p style="font-size:13px; color:#6B7280; font-style:italic; margin-bottom: 15px;">No comments yet. Start the discussion below.</p>
+    {% endif %}
+
+    <form method="POST" action="/observation/{{ obs.id }}/comment">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label style="font-size:12px; color:#6B7280; font-weight:600;">Add a comment</label>
+        <textarea name="message" required placeholder="Type your message here..." style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px; min-height:80px;"></textarea>
+        <button type="submit" style="background:#0A1E3D; color:#C9A84C; border:none; padding:10px; border-radius:6px; font-weight:bold; width:100%; cursor:pointer;">
+            Post Comment
+        </button>
+    </form>
+</div>
+
+<a href="/observations" style="display:block; text-align:center; margin-top:20px; color:#6B7280; text-decoration:none; font-weight:bold; font-size:14px;">← Back to Observations</a>
 
 {% endblock %}

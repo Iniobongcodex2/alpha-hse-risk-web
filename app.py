@@ -202,7 +202,7 @@ def setup_database():
         )
     """)
 
-    # --- NEW TABLE: Notification Log (Stage A) ---
+    # NEW TABLE: Notification Log (Stage A)
     cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS notification_log (
             id {id_type}, 
@@ -215,7 +215,14 @@ def setup_database():
             UNIQUE(action_id, notification_type, target_date)
         )
     """)
-    # --------------------------------------------
+
+    # NEW TABLE: Team Discussion Comments (FIXED & MOVED HERE)
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS comments (
+            id {id_type}, observation_ref TEXT, organization TEXT,
+            author TEXT, message TEXT, date_posted TEXT
+        )
+    """)
 
     # IDEMPOTENT MIGRATIONS (Safe for existing databases)
     if is_postgres:
@@ -279,6 +286,32 @@ def setup_database():
                 INSERT INTO users (username, full_name, email, role_id, organization_name, is_active, password_hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, ("God'stime", "Iniobong Eyibio", "godstimeisthebest55@gmail.com", admin_role_id, "Shell oil", 1, password_hash))
+            
+    # ============================================
+    # STAGE 21: Facility Management & Action Refactor
+    # ============================================
+    
+    # 1. Create Facilities Table
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS facilities (
+            id {id_type}, organization TEXT, name TEXT,
+            location TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 2. Safely add 'source_type' and 'source_id' to corrective_actions
+    # (This allows actions to link to Observations, Inspections, or Incidents)
+    if is_postgres:
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='corrective_actions'")
+        action_cols = [row[0] for row in cursor.fetchall()]
+    else:
+        cursor.execute("PRAGMA table_info(corrective_actions)")
+        action_cols = [row[1] for row in cursor.fetchall()]
+
+    if 'source_type' not in action_cols:
+        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN source_type TEXT DEFAULT 'Observation'")
+    if 'source_id' not in action_cols:
+        cursor.execute("ALTER TABLE corrective_actions ADD COLUMN source_id INTEGER")
 
     conn.commit()
     cursor.close()
@@ -1303,6 +1336,48 @@ def admin_audit():
 
     return render_template("audit.html", active="admin", logs=logs)
 
+@app.route("/admin/facilities", methods=["GET", "POST"])
+def admin_facilities():
+    if "username" not in session or session.get("role_id") not in (3, 4):
+        return "Access Denied", 403
+
+    user_org = session.get("organization_name", "Unknown")
+    conn = get_db_connection()
+    is_postgres = os.environ.get('DATABASE_URL') is not None
+    q = "%s" if is_postgres else "?"
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        location = request.form.get("location", "").strip()
+        
+        if name:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(f"INSERT INTO facilities (organization, name, location) VALUES ({q}, {q}, {q})", (user_org, name, location))
+                conn.commit()
+                log_action(session.get("username"), "CREATE_FACILITY", "Facility", name, "Created a new facility")
+                cursor.close()
+            except Exception as e:
+                print(f"Error creating facility: {type(e).__name__}")
+
+    # Fetch all facilities for this organization
+    facilities = []
+    try:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgres else conn.cursor()
+        cursor.execute(f"SELECT * FROM facilities WHERE organization = {q} ORDER BY id DESC", (user_org,))
+        if is_postgres:
+            facilities = cursor.fetchall()
+        else:
+            conn.row_factory = sqlite3.Row
+            facilities = [dict(r) for r in cursor.fetchall()]
+        cursor.close()
+    except Exception as e:
+        print(f"Error fetching facilities: {type(e).__name__}")
+    finally:
+        conn.close()
+
+    return render_template("facilities.html", active="admin", facilities=facilities)
+
 @app.route("/admin")
 def admin_panel():
     if "username" not in session:
@@ -1329,6 +1404,7 @@ def admin_panel():
         print("Admin DB error:", e)
 
     return render_template("admin.html", active="admin", users=users)
+
 
 @app.route("/admin/toggle_user/<username>", methods=["POST"])
 def toggle_user_status(username):
@@ -1463,6 +1539,54 @@ def raise_observation():
             return render_template("raise_observation.html", active="observations", error=f"Save failed: {e}")
 
     return render_template("raise_observation.html", active="observations")
+@app.route("/observation/<int:obs_id>/comment", methods=["POST"])
+def add_comment(obs_id):
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    user_org = session.get("organization_name", "Unknown")
+    message = request.form.get("message", "").strip()
+
+    if not message:
+        return redirect(url_for("observation_detail", obs_id=obs_id))
+
+    date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        is_postgres = os.environ.get('DATABASE_URL') is not None
+        q = "%s" if is_postgres else "?"
+        
+        cursor = conn.cursor()
+        
+        # 1. Verify the observation and get its Reference
+        cursor.execute(f"SELECT reference FROM observations WHERE id = {q} AND organization = {q}", (obs_id, user_org))
+        obs_row = cursor.fetchone()
+        
+        if not obs_row:
+            return "Observation not found or unauthorized.", 404
+            
+        obs_ref = obs_row['reference'] if is_postgres else obs_row[0]
+
+        # 2. Insert the comment
+        cursor.execute(f"""
+            INSERT INTO comments (observation_ref, organization, author, message, date_posted)
+            VALUES ({q}, {q}, {q}, {q}, {q})
+        """, (obs_ref, user_org, session.get("full_name", session.get("username")), message, date_now))
+        
+        conn.commit()
+        
+        # Log the action
+        log_action(session.get("username"), "ADD_COMMENT", "Observation", obs_ref, "Added a comment")
+
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"Comment Error: {type(e).__name__}")
+    finally:
+        if conn: conn.close()
+
+    return redirect(url_for("observation_detail", obs_id=obs_id))
 
 @app.route("/observation/<int:obs_id>", methods=["GET", "POST"])
 def observation_detail(obs_id):
@@ -1482,7 +1606,6 @@ def observation_detail(obs_id):
             conn = get_db_connection()
             is_postgres = os.environ.get('DATABASE_URL') is not None
             q = "%s" if is_postgres else "?"
-            
             cursor = conn.cursor()
             
             # --- Strict Server-Side Validation (Stage A) ---
@@ -1492,15 +1615,11 @@ def observation_detail(obs_id):
                 return "Error: The selected assignee is invalid, inactive, or does not belong to your organization.", 400
             # ----------------------------------------------------
 
-            # Get the observation reference for linking
-            if is_postgres:
-                cursor.execute("SELECT reference FROM observations WHERE id = %s AND organization = %s", (obs_id, user_org))
-            else:
-                cursor.execute("SELECT reference FROM observations WHERE id = ? AND organization = ?", (obs_id, user_org))
+            cursor.execute(f"SELECT reference FROM observations WHERE id = {q} AND organization = {q}", (obs_id, user_org))
             obs_row = cursor.fetchone()
             
             if obs_row:
-                obs_ref = obs_row[0]
+                obs_ref = obs_row['reference'] if is_postgres else obs_row[0]
                 date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
                 cursor.execute(f"""
@@ -1509,27 +1628,20 @@ def observation_detail(obs_id):
                     VALUES ({q}, {q}, {q}, {q}, {q}, 'Open', {q})
                 """, (obs_ref, user_org, action_desc, assigned_to, due_date, date_now))
                 
-                # Update observation status to 'Action Assigned'
                 cursor.execute(f"UPDATE observations SET status = 'Action Assigned' WHERE id = {q}", (obs_id,))
                 
-                # --- SAVE TO DATABASE FIRST ---
                 conn.commit()
                 
-                # --- NEW: SEND ASSIGNMENT EMAIL (Safe Post-Commit) ---
+                # --- SEND ASSIGNMENT EMAIL ---
                 try:
-                    # Look up the user's email securely within the same organization
                     cursor.execute(f"SELECT email FROM users WHERE full_name = {q} AND organization_name = {q}", (assigned_to, user_org))
                     user_row = cursor.fetchone()
-                    
                     if user_row:
-                        email_addr = user_row['email'] if is_postgres else user_row['email']
-                        
+                        email_addr = user_row['email'] if is_postgres else user_row[0]
                         if email_addr:
                             subject = f"New Action Assigned: {obs_ref}"
-                            # Escape the text so it can't inject HTML into the email
                             safe_desc = html.escape(action_desc)
                             safe_date = html.escape(due_date)
-                            
                             body = f"""
                             <div style="font-family: Arial, sans-serif; padding: 20px; background: #F3F4F6;">
                                 <h2 style="color: #0A1E3D;">New Corrective Action Assigned</h2>
@@ -1545,9 +1657,7 @@ def observation_detail(obs_id):
                             send_email_notification(email_addr, subject, body)
                 except Exception as mail_err:
                     print(f"Non-fatal email error: {type(mail_err).__name__}")
-                # ------------------------------------------------------
                 
-                # Audit Log
                 log_action(session.get("username"), "ASSIGN_ACTION", "Observation", obs_ref, f"Assigned action to {assigned_to}")
             
             cursor.close()
@@ -1559,25 +1669,38 @@ def observation_detail(obs_id):
         finally:
             if conn: conn.close()
 
-    # --- GET REQUEST LOGIC STARTS HERE ---
+    # --- GET REQUEST LOGIC ---
     obs = None
     actions = []
     users = []
+    comments = []
     conn = None
     try:
         conn = get_db_connection()
         is_postgres = os.environ.get('DATABASE_URL') is not None
         q = "%s" if is_postgres else "?"
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgres else conn.cursor()
+        
+        # Use RealDictCursor for Postgres, and sqlite3.Row for SQLite
+        if is_postgres:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        else:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
         
         cursor.execute(f"SELECT * FROM observations WHERE id = {q} AND organization = {q}", (obs_id, user_org))
         obs = cursor.fetchone()
         
         if obs:
-            cursor.execute(f"SELECT * FROM corrective_actions WHERE observation_ref = {q} AND organization = {q} ORDER BY id DESC", (obs["reference"] if is_postgres else obs["reference"], user_org))
+            # Safe Reference extraction for both adapters
+            obs_ref = obs["reference"] if is_postgres else obs["reference"]
+            
+            cursor.execute(f"SELECT * FROM corrective_actions WHERE observation_ref = {q} AND organization = {q} ORDER BY id DESC", (obs_ref, user_org))
             actions = cursor.fetchall()
             
-        # Fetch eligible users for dropdown
+            # Fetch comments (now using observation_ref, which matches the insert route)
+            cursor.execute(f"SELECT * FROM comments WHERE observation_ref = {q} AND organization = {q} ORDER BY id DESC", (obs_ref, user_org))
+            comments = cursor.fetchall()
+            
         cursor.execute(f"SELECT full_name FROM users WHERE organization_name = {q} AND is_active = 1 ORDER BY full_name ASC", (user_org,))
         users = cursor.fetchall()
         
@@ -1590,7 +1713,8 @@ def observation_detail(obs_id):
     if not obs:
         return "Observation not found or access denied.", 404
 
-    return render_template("observation_detail.html", active="observations", obs=obs, actions=actions, users=users)
+    return render_template("observation_detail.html", active="observations", obs=obs, actions=actions, users=users, comments=comments)
+
 @app.route("/management-engagement")
 def management_engagement():
     if "username" not in session:
@@ -1985,17 +2109,18 @@ def cron_check_overdue():
 @app.route("/api/generate-controls", methods=["POST"])
 def generate_ai_controls():
     if "username" not in session:
-        return json.dumps({"error": "Unauthorized"}), 401
+        return {"error": "Unauthorized"}, 401
 
     data = request.get_json()
     hazard_description = data.get("description", "").strip()
     
     if not hazard_description:
-        return json.dumps({"error": "No description provided"}), 400
+        return {"error": "No description provided"}, 400
 
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        return json.dumps({"error": "AI API key is missing on the server."}), 500
+        print("ERROR: GROQ_API_KEY is missing from environment variables.")
+        return {"error": "AI API key is missing on the server."}, 500
 
     try:
         client = Groq(api_key=api_key)
@@ -2013,24 +2138,24 @@ def generate_ai_controls():
         Only return the raw JSON. Do not include markdown formatting or extra text.
         """
 
+        # Using the standard Mixtral model which is highly stable on Groq
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama3-8b-8192",
+            model="openai/gpt-oss-20b",
             temperature=0.2,
+            response_format={"type": "json_object"}
         )
 
         response_text = chat_completion.choices[0].message.content
         
-        # Clean up the response in case the AI adds markdown backticks
-        response_text = response_text.replace("```json", "").replace("```", "").strip()
-        
+        import json
         ai_data = json.loads(response_text)
         
-        return json.dumps(ai_data), 200, {'Content-Type': 'application/json'}
+        return ai_data, 200
 
     except Exception as e:
-        print(f"AI Error: {type(e).__name__}")
-        return json.dumps({"error": "Failed to generate AI response. Please try again."}), 500, {'Content-Type': 'application/json'}        
-
+        # This will print the exact error from Groq in your terminal
+        print(f"GROQ API ERROR: {e}") 
+        return {"error": "Failed to generate AI response. Check terminal for details."}, 500
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)

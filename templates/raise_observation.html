@@ -62,6 +62,34 @@
         <textarea name="description" id="description" placeholder="Describe what you observed, the potential consequence, and any immediate actions taken." required
                   style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; min-height:120px;"></textarea>
 
+        <!-- NEW: AI Result Display Container (Hidden by default) -->
+        <div id="ai-result-box" style="display: none; margin-bottom: 15px; padding: 15px; background: #F8FAFC; border-left: 4px solid #C9A84C; border-radius: 6px; border: 1px solid #E2E8F0;">
+            <h3 style="font-size: 14px; color: #0A1E3D; margin-bottom: 10px; display: flex; align-items: center; gap: 5px;">
+                <span>✨</span> AI Analysis
+            </h3>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                <div style="flex: 1; background: #FFFFFF; padding: 8px; border-radius: 4px; border: 1px solid #CBD5E1; text-align: center;">
+                    <p style="font-size: 10px; color: #6B7280; font-weight: bold; margin-bottom: 2px;">SEVERITY</p>
+                    <p id="ai-severity" style="font-size: 16px; color: #0A1E3D; font-weight: bold;">-</p>
+                </div>
+                <div style="flex: 1; background: #FFFFFF; padding: 8px; border-radius: 4px; border: 1px solid #CBD5E1; text-align: center;">
+                    <p style="font-size: 10px; color: #6B7280; font-weight: bold; margin-bottom: 2px;">LIKELIHOOD</p>
+                    <p id="ai-likelihood" style="font-size: 16px; color: #0A1E3D; font-weight: bold;">-</p>
+                </div>
+                <div style="flex: 1; background: #FFFFFF; padding: 8px; border-radius: 4px; border: 1px solid #CBD5E1; text-align: center;">
+                    <p style="font-size: 10px; color: #6B7280; font-weight: bold; margin-bottom: 2px;">PRIORITY</p>
+                    <p id="ai-priority" style="font-size: 16px; color: #0A1E3D; font-weight: bold;">-</p>
+                </div>
+            </div>
+
+            <div style="background: #FFFFFF; padding: 12px; border-radius: 4px; border: 1px solid #CBD5E1;">
+                <p style="font-size: 11px; color: #6B7280; font-weight: bold; margin-bottom: 5px;">SUGGESTED CONTROLS</p>
+                <p id="ai-controls" style="font-size: 13px; color: #1F2937; line-height: 1.5;">-</p>
+            </div>
+        </div>
+        <!-- End AI Result Box -->
+
         <!-- Hidden fields for AI to fill -->
         <input type="hidden" name="ai_severity" id="ai_severity">
         <input type="hidden" name="ai_likelihood" id="ai_likelihood">
@@ -98,18 +126,30 @@
                         // Calculate priority based on AI's severity and likelihood
                         const score = data.severity * data.likelihood;
                         let priority = "Low";
-                        if (score >= 16) priority = "Critical";
-                        else if (score >= 10) priority = "High";
-                        else if (score >= 5) priority = "Medium";
+                        let color = "#059669"; // Green
+                        
+                        if (score >= 16) { priority = "Critical"; color = "#DC2626"; } // Red
+                        else if (score >= 10) { priority = "High"; color = "#F97316"; } // Orange
+                        else if (score >= 5) { priority = "Medium"; color = "#D97706"; } // Yellow
                         
                         // Auto-select the priority dropdown
                         document.querySelector('select[name="priority"]').value = priority;
                         
-                        // Store the controls in a hidden field to show the user
+                        // Store the controls in a hidden field
                         document.getElementById('ai_controls').value = data.controls;
                         
-                        // Show the user the AI's suggestion
-                        alert("✨ AI Analysis Complete!\n\nSeverity: " + data.severity + "\nLikelihood: " + data.likelihood + "\nPriority set to: " + priority + "\n\nSuggested Controls:\n" + data.controls);
+                        // Show the beautiful UI box
+                        document.getElementById('ai-result-box').style.display = 'block';
+                        
+                        // Populate the data
+                        document.getElementById('ai-severity').textContent = data.severity;
+                        document.getElementById('ai-likelihood').textContent = data.likelihood;
+                        document.getElementById('ai-priority').textContent = priority;
+                        document.getElementById('ai-priority').style.color = color;
+                        document.getElementById('ai-controls').textContent = data.controls;
+
+                        // Scroll to the result box
+                        document.getElementById('ai-result-box').scrollIntoView({ behavior: 'smooth', block: 'center' });
                     } else {
                         alert("AI Error: " + data.error);
                     }

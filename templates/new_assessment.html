@@ -15,6 +15,24 @@
         <input type="text" value="{{ session.get('organization_name', 'Unknown') }}" readonly
                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#F3F4F6; color:#6B7280; cursor:not-allowed;">
 
+        <!-- NEW: Assessment Mode Selector -->
+        <label style="font-size:13px; color:#6B7280; font-weight:600;">Assessment Mode</label>
+        <select name="assessment_mode" id="assessment_mode" onchange="toggleMode()" style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+            <option value="Professional">Professional HSE Mode (ISO 45001)</option>
+            <option value="NEBOSH GIC2">NEBOSH GIC2 Learning Mode</option>
+        </select>
+
+        <!-- NEW: GIC2 Specific Fields (Hidden by default) -->
+        <div id="gic2_fields" style="display: none; background: #F8FAFC; padding: 15px; border-radius: 8px; border: 1px solid #E2E8F0; margin-bottom: 15px;">
+            <h3 style="font-size:14px; color:#0A1E3D; margin-bottom:10px;">GIC2 Assessment Context</h3>
+            
+            <label style="font-size:13px; color:#6B7280; font-weight:600;">Description of Work Activity</label>
+            <textarea name="work_activity" placeholder="Describe the work activity being assessed..." style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px; min-height:60px;"></textarea>
+
+            <label style="font-size:13px; color:#6B7280; font-weight:600;">Persons at Risk</label>
+            <input type="text" name="persons_at_risk" placeholder="e.g., Maintenance worker, nearby office staff" style="width:100%; padding:10px; margin:6px 0 12px; border:1px solid #CBD5E1; border-radius:6px;">
+        </div>
+
         <label style="font-size:13px; color:#6B7280; font-weight:600;">Department</label>
         <input type="text" name="department" placeholder="Department"
                style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
@@ -143,7 +161,6 @@
             ➕ Add Another Hazard
         </button>
         
-        <!-- FIXED: Added confirmation directly to the button -->
         <button type="button" onclick="if(confirm('Are you sure you want to clear the entire form? All unsaved data will be lost.')) clearAll();" class="btn-primary" style="background:#DC2626; color:#FFFFFF; flex: 1; min-width: 200px;">
             🗑️ Clear All Data
         </button>
@@ -151,6 +168,21 @@
 </form>
 
 <script>
+    // ---- Toggle GIC2 Mode ----
+    function toggleMode() {
+        const mode = document.getElementById('assessment_mode').value;
+        const gic2Fields = document.getElementById('gic2_fields');
+        
+        if (mode === 'NEBOSH GIC2') {
+            gic2Fields.style.display = 'block';
+        } else {
+            gic2Fields.style.display = 'none';
+        }
+    }
+
+    // Run on page load in case it was pre-selected
+    document.addEventListener('DOMContentLoaded', toggleMode);
+
     // ---- Custom Category Logic ----
     function toggleCustomCategory(selectElement) {
         const parentBlock = selectElement.closest('.hazard-block');

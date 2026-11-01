@@ -221,6 +221,16 @@ def setup_database():
             result TEXT, notes TEXT
         )
     """)
+        # SAFE MIGRATION: Add assessment_mode to assessments
+    if is_postgres:
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='assessments'")
+        assess_cols = [row[0] for row in cursor.fetchall()]
+    else:
+        cursor.execute("PRAGMA table_info(assessments)")
+        assess_cols = [row[1] for row in cursor.fetchall()]
+
+    if 'assessment_mode' not in assess_cols:
+        cursor.execute("ALTER TABLE assessments ADD COLUMN assessment_mode TEXT DEFAULT 'Professional HSE Mode'")
 
     # 2. IDEMPOTENT MIGRATIONS (Safe additions to existing tables)
     if is_postgres:
@@ -327,10 +337,29 @@ def setup_database():
             cursor.execute("ALTER TABLE inspections ADD COLUMN inspection_date TEXT")
         if 'status' not in insp_cols:
             cursor.execute("ALTER TABLE inspections ADD COLUMN status TEXT DEFAULT 'Completed'")
+    # ============================================
+    # STAGE 24: NEBOSH GIC2 & AI Integration Fields
+    # ============================================
+    
+    # Add Mode and GIC2 specific context to assessments
+    if is_postgres:
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='assessments'")
+        assess_cols = [row[0] for row in cursor.fetchall()]
+    else:
+        cursor.execute("PRAGMA table_info(assessments)")
+        assess_cols = [row[1] for row in cursor.fetchall()]
+
+    if 'assessment_mode' not in assess_cols:
+        cursor.execute("ALTER TABLE assessments ADD COLUMN assessment_mode TEXT DEFAULT 'Professional'")
+    if 'work_activity' not in assess_cols:
+        cursor.execute("ALTER TABLE assessments ADD COLUMN work_activity TEXT")
+    if 'persons_at_risk' not in assess_cols:
+        cursor.execute("ALTER TABLE assessments ADD COLUMN persons_at_risk TEXT")
 
     conn.commit()
     cursor.close()
     conn.close()
+
 
 # ============================================
 # RUN SETUP ON FIRST REQUEST
@@ -697,6 +726,12 @@ def new_assessment():
         location = request.form.get("location", "").strip()
         project = request.form.get("project", "").strip()
         
+        # --- NEW: Grab GIC2 variables ---
+        assessment_mode = request.form.get("assessment_mode", "Professional")
+        work_activity = request.form.get("work_activity", "").strip()
+        persons_at_risk = request.form.get("persons_at_risk", "").strip()
+        # --------------------------------
+        
         categories = request.form.getlist("category[]")
         custom_categories = request.form.getlist("custom_category[]")
         hazard_names = request.form.getlist("hazard_name[]")
@@ -720,19 +755,21 @@ def new_assessment():
             
             if is_postgres:
                 cursor = conn.cursor()
+                # --- NEW: Updated INSERT to include GIC2 fields ---
                 cursor.execute(f"""
                     INSERT INTO assessments
-                    (reference, organization, department, location, assessor, project, date_created)
-                    VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}) RETURNING id
-                """, (reference, organization, department, location, session.get("full_name", session.get("username")), project, date_now))
+                    (reference, organization, department, location, assessor, project, date_created, assessment_mode, work_activity, persons_at_risk)
+                    VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}) RETURNING id
+                """, (reference, organization, department, location, session.get("full_name", session.get("username")), project, date_now, assessment_mode, work_activity, persons_at_risk))
                 assessment_id = cursor.fetchone()[0]
             else:
                 cursor = conn.cursor()
+                # --- NEW: Updated INSERT to include GIC2 fields ---
                 cursor.execute(f"""
                     INSERT INTO assessments
-                    (reference, organization, department, location, assessor, project, date_created)
-                    VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q})
-                """, (reference, organization, department, location, session.get("full_name", session.get("username")), project, date_now))
+                    (reference, organization, department, location, assessor, project, date_created, assessment_mode, work_activity, persons_at_risk)
+                    VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
+                """, (reference, organization, department, location, session.get("full_name", session.get("username")), project, date_now, assessment_mode, work_activity, persons_at_risk))
                 assessment_id = cursor.lastrowid
 
             for i in range(len(hazard_names)):

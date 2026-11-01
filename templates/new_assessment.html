@@ -172,10 +172,8 @@
         const container = document.getElementById('hazards-container');
         const firstBlock = container.querySelector('.hazard-block');
         
-        // Clone the first block
         const newBlock = firstBlock.cloneNode(true);
         
-        // Clear the input values and reset dropdowns in the new block
         newBlock.querySelectorAll('input, textarea').forEach(input => {
             input.value = '';
         });
@@ -185,11 +183,9 @@
         
         newBlock.querySelector('.custom-category-div').style.display = 'none';
 
-        // Update the Hazard Number title
         const numHazards = container.querySelectorAll('.hazard-block').length;
         newBlock.querySelector('.hazard-number').textContent = numHazards + 1;
 
-        // Add a "Remove" button to the cloned block
         const headerDiv = newBlock.querySelector('div[style*="justify-content:space-between"]');
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
@@ -201,7 +197,6 @@
         };
         headerDiv.appendChild(removeBtn);
 
-        // Add the new block to the container
         container.appendChild(newBlock);
     }
 
@@ -261,7 +256,6 @@
             assessment['saved_at'] = new Date().toISOString();
 
             try {
-                // Wait 15 seconds before timing out (allows Render to wake up)
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 15000);
 

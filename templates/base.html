@@ -94,6 +94,13 @@
             margin: 0 auto;
         }
 
+        /* ---- DESKTOP EXPANSION (Laptops/PCs) ---- */
+        @media (min-width: 900px) {
+            .app-content {
+                max-width: 1000px; /* Expands the dashboard on large screens */
+            }
+        }
+
         /* ---- BOTTOM NAV (SWIPEABLE & CENTERED) ---- */
         .app-nav {
             position: fixed;
@@ -104,14 +111,9 @@
             background: #FFFFFF;
             border-top: 1px solid #E5E7EB;
             display: flex;
-            
-            /* NEW: Center the tabs on desktop */
             justify-content: center; 
-            
             z-index: 100;
             box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
-            
-            /* Enable horizontal scrolling */
             overflow-x: auto;
             -webkit-overflow-scrolling: touch; 
             scrollbar-width: none; 
@@ -122,7 +124,6 @@
         }
 
         .app-nav a {
-            /* Fixed width so tabs don't squish */
             flex: 0 0 75px; 
             display: flex;
             flex-direction: column;
@@ -197,7 +198,7 @@
         <button onclick="toggleDarkMode()" style="position: absolute; right: 15px; background: none; border: none; font-size: 20px; cursor: pointer;">🌙</button>
     </div>
 
-    <!-- NEW: Pending Sync Indicator -->
+    <!-- Pending Sync Indicator -->
     <div id="sync-indicator" style="display: none; position: fixed; top: 60px; left: 0; right: 0; background: #FEF3C7; color: #92400E; text-align: center; font-size: 12px; font-weight: bold; padding: 5px; z-index: 99;">
         🟡 Pending Sync
     </div>
@@ -235,13 +236,11 @@
             <span>Observe</span>
         </a>
 
-        <!-- Inspections Tab -->
         <a href="/inspections" class="{% if active == 'inspections' %}active{% endif %}">
             <span class="nav-icon">🔍</span>
             <span>Inspect</span>
         </a>
 
-        <!-- Incidents Tab -->
         <a href="/incidents" class="{% if active == 'incidents' %}active{% endif %}">
             <span class="nav-icon">🚨</span>
             <span>Incident</span>

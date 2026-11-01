@@ -18,13 +18,13 @@
         </div>
         
         <div style="margin-bottom: 8px;">
-            <span style="font-size:12px; font-weight:bold; color:#1A4B8C; background:#E0F2FE; padding:2px 6px; border-radius:4px;">{{ ins.facility_name }}</span>
-            <span style="font-size:12px; color:#4B5563; margin-left: 5px;">Score: {{ ins.score }}%</span>
+            <strong style="font-size:13px; color:#4B5563;">Facility:</strong> 
+            <span style="font-size:12px; font-weight:bold; color:#1A4B8C; background:#E0F2FE; padding:2px 6px; border-radius:4px;">
+                {{ ins.facility_name or 'Unknown' }}
+            </span>
         </div>
         
-        <p style="font-size: 13px; color: #4B5563; margin-bottom: 10px;">{{ ins.findings }}</p>
-        
-        <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 10px;">
             <span style="font-size:12px; color:#6B7280;">Inspector: {{ ins.inspector }}</span>
             <span style="font-size:11px; background:#D1FAE5; color:#059669; padding:2px 6px; border-radius:4px; font-weight:bold;">{{ ins.status }}</span>
         </div>

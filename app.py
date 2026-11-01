@@ -214,6 +214,13 @@ def setup_database():
             author TEXT, message TEXT, date_posted TEXT
         )
     """)
+        # 2. Inspection Items (Checklist)
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS inspection_items (
+            id {id_type}, inspection_id INTEGER, question TEXT,
+            result TEXT, notes TEXT
+        )
+    """)
 
     # 2. IDEMPOTENT MIGRATIONS (Safe additions to existing tables)
     if is_postgres:
@@ -304,6 +311,22 @@ def setup_database():
                 INSERT INTO users (username, full_name, email, role_id, organization_name, is_active, password_hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, ("God'stime", "Iniobong Eyibio", "godstimeisthebest55@gmail.com", admin_role_id, "Shell oil", 1, password_hash))
+                # SAFE MIGRATION: Add facility_id to inspections if it's missing
+    if is_postgres:
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='inspections'")
+        insp_cols = [row[0] for row in cursor.fetchall()]
+    else:
+        cursor.execute("PRAGMA table_info(inspections)")
+        insp_cols = [row[1] for row in cursor.fetchall()]
+
+    # If the table exists but is missing facility_id, add it
+    if insp_cols:
+        if 'facility_id' not in insp_cols:
+            cursor.execute("ALTER TABLE inspections ADD COLUMN facility_id INTEGER")
+        if 'inspection_date' not in insp_cols:
+            cursor.execute("ALTER TABLE inspections ADD COLUMN inspection_date TEXT")
+        if 'status' not in insp_cols:
+            cursor.execute("ALTER TABLE inspections ADD COLUMN status TEXT DEFAULT 'Completed'")
 
     conn.commit()
     cursor.close()
@@ -2008,6 +2031,7 @@ def ai_suggest():
     except Exception as e:
         print(f"AI Error: {type(e).__name__}")
         return jsonify({"error": "Failed to generate AI response"}), 500
+
 @app.route("/inspections")
 def inspections_register():
     if "username" not in session:
@@ -2021,61 +2045,93 @@ def inspections_register():
         is_postgres = os.environ.get('DATABASE_URL') is not None
         q = "%s" if is_postgres else "?"
         
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgres else conn.cursor()
+        if is_postgres:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        else:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+        
+        # No more LEFT JOIN! We just pull everything from inspections.
         cursor.execute(f"SELECT * FROM inspections WHERE organization = {q} ORDER BY id DESC", (user_org,))
         
         if is_postgres:
             inspections = cursor.fetchall()
         else:
-            conn.row_factory = sqlite3.Row
             inspections = [dict(r) for r in cursor.fetchall()]
             
         cursor.close()
-        conn.close()
     except Exception as e:
         print(f"Inspection DB error: {type(e).__name__}")
-
+    finally:
+        if conn: conn.close()
+        
     return render_template("inspections.html", active="inspections", inspections=inspections)
-
 
 @app.route("/new-inspection", methods=["GET", "POST"])
 def new_inspection():
     if "username" not in session:
         return redirect(url_for("login"))
 
-    user_org = session.get("organization_name", "Unknown")
+    if request.method == "POST":
+        organization = session.get("organization_name", "Unknown")
+        # FIXED: Pull the name from the form, not the ID
+        facility_name = request.form.get("facility_name")
+        inspection_date = request.form.get("inspection_date")
+        inspector = request.form.get("inspector", "").strip()
+
+        reference = "INS-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+        try:
+            conn = get_db_connection()
+            is_postgres = os.environ.get('DATABASE_URL') is not None
+            q = "%s" if is_postgres else "?"
+            cursor = conn.cursor()
+
+            # FIXED: Save facility_name instead of facility_id
+            if is_postgres:
+                cursor.execute(f"""
+                    INSERT INTO inspections (reference, organization, facility_name, inspector, inspection_date, status)
+                    VALUES ({q}, {q}, {q}, {q}, {q}, 'Completed') RETURNING id
+                """, (reference, organization, facility_name, inspector, inspection_date))
+                insp_id = cursor.fetchone()[0]
+            else:
+                cursor.execute(f"""
+                    INSERT INTO inspections (reference, organization, facility_name, inspector, inspection_date, status)
+                    VALUES ({q}, {q}, {q}, {q}, {q}, 'Completed')
+                """, (reference, organization, facility_name, inspector, inspection_date))
+                insp_id = cursor.lastrowid
+
+            # Save the 3 checklist items
+            for i in range(1, 4):
+                q_text = request.form.get(f"q{i}_text")
+                q_result = request.form.get(f"q{i}_result")
+                q_notes = request.form.get(f"q{i}_notes", "")
+                cursor.execute(f"""
+                    INSERT INTO inspection_items (inspection_id, question, result, notes)
+                    VALUES ({q}, {q}, {q}, {q})
+                """, (insp_id, q_text, q_result, q_notes))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            log_action(session.get("username"), "NEW_INSPECTION", "Inspection", reference, "Completed an inspection")
+            return redirect(url_for("inspections_register"))
+
+        except Exception as e:
+            print(f"INSPECTION SAVE ERROR: {type(e).__name__}")
+            return f"Error saving inspection: {e}", 500
+
+    # GET request - fetch facilities for dropdown
     facilities = []
-    
     try:
         conn = get_db_connection()
         is_postgres = os.environ.get('DATABASE_URL') is not None
         q = "%s" if is_postgres else "?"
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgres else conn.cursor()
         
-        if request.method == "POST":
-            facility_name = request.form.get("facility_name", "").strip()
-            inspection_date = request.form.get("inspection_date", "").strip()
-            findings = request.form.get("findings", "").strip()
-            score = request.form.get("score", "0").strip()
-            
-            reference = "INS-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            inspector = session.get("full_name", session.get("username"))
-            status = "Completed"
-            
-            cursor.execute(f"""
-                INSERT INTO inspections 
-                (reference, organization, facility_name, inspector, inspection_date, score, findings, status)
-                VALUES ({q}, {q}, {q}, {q}, {q}, {q}, {q}, {q})
-            """, (reference, user_org, facility_name, inspector, inspection_date, score, findings, status))
-            
-            conn.commit()
-            log_action(session.get("username"), "NEW_INSPECTION", "Inspection", reference, f"Inspected {facility_name}")
-            cursor.close()
-            conn.close()
-            return redirect(url_for("inspections_register"))
-            
-        # GET Request: Fetch facilities for the dropdown
-        cursor.execute(f"SELECT * FROM facilities WHERE organization = {q} ORDER BY name ASC", (user_org,))
+        cursor.execute(f"SELECT id, name FROM facilities WHERE organization = {q}", (session.get("organization_name"),))
+        
         if is_postgres:
             facilities = cursor.fetchall()
         else:
@@ -2083,12 +2139,12 @@ def new_inspection():
             facilities = [dict(r) for r in cursor.fetchall()]
             
         cursor.close()
-        conn.close()
     except Exception as e:
-        print(f"Inspection Error: {type(e).__name__}")
+        print(f"Facility fetch error: {type(e).__name__}")
+    finally:
+        if conn: conn.close()
 
     return render_template("new_inspection.html", active="inspections", facilities=facilities)
-
 
 @app.route("/profile")
 def profile():
@@ -2108,6 +2164,7 @@ def service_worker():
     response.headers['Content-Type'] = 'application/javascript'
     response.headers['Service-Worker-Allowed'] = '/'
     return response
+
 
 @app.route("/cron/check-overdue", methods=["GET"])
 def cron_check_overdue():
@@ -2188,6 +2245,8 @@ def cron_check_overdue():
         return "Internal Error", 500
     finally:
         if conn: conn.close()
+
+        
 @app.route("/api/generate-controls", methods=["POST"])
 def generate_ai_controls():
     if "username" not in session:

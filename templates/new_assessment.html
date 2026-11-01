@@ -143,7 +143,8 @@
             ➕ Add Another Hazard
         </button>
         
-        <button type="button" onclick="clearAll()" class="btn-primary" style="background:#DC2626; color:#FFFFFF; flex: 1; min-width: 200px;">
+        <!-- FIXED: Added confirmation directly to the button -->
+        <button type="button" onclick="if(confirm('Are you sure you want to clear the entire form? All unsaved data will be lost.')) clearAll();" class="btn-primary" style="background:#DC2626; color:#FFFFFF; flex: 1; min-width: 200px;">
             🗑️ Clear All Data
         </button>
     </div>
@@ -214,31 +215,29 @@
 
     // ---- Clear All Logic ----
     function clearAll() {
-        if (confirm("Are you sure you want to clear the entire form? All unsaved data will be lost.")) {
-            const form = document.getElementById('assessment-form');
-            form.reset(); 
+        const form = document.getElementById('assessment-form');
+        form.reset(); 
 
-            const container = document.getElementById('hazards-container');
-            const blocks = container.querySelectorAll('.hazard-block');
+        const container = document.getElementById('hazards-container');
+        const blocks = container.querySelectorAll('.hazard-block');
+        
+        for (let i = 1; i < blocks.length; i++) {
+            blocks[i].remove();
+        }
+        
+        const firstBlock = container.querySelector('.hazard-block');
+        if (firstBlock) {
+            firstBlock.querySelectorAll('input, textarea').forEach(input => {
+                input.value = '';
+            });
+            firstBlock.querySelectorAll('select').forEach(select => {
+                select.selectedIndex = 0;
+            });
             
-            for (let i = 1; i < blocks.length; i++) {
-                blocks[i].remove();
-            }
+            const customDiv = firstBlock.querySelector('.custom-category-div');
+            if (customDiv) customDiv.style.display = 'none';
             
-            const firstBlock = container.querySelector('.hazard-block');
-            if (firstBlock) {
-                firstBlock.querySelectorAll('input, textarea').forEach(input => {
-                    input.value = '';
-                });
-                firstBlock.querySelectorAll('select').forEach(select => {
-                    select.selectedIndex = 0;
-                });
-                
-                const customDiv = firstBlock.querySelector('.custom-category-div');
-                if (customDiv) customDiv.style.display = 'none';
-                
-                firstBlock.querySelector('.hazard-number').textContent = '1';
-            }
+            firstBlock.querySelector('.hazard-number').textContent = '1';
         }
     }
 

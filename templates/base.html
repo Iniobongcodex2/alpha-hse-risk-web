@@ -28,18 +28,37 @@
             padding-bottom: 70px;
         }
 
-        /* ---- DARK MODE THEME ---- */
+        /* ---- DARK MODE THEME (FIXED) ---- */
         body.dark-mode {
-            background: #0A1E3D !important;
+            background: #0A1E3D !important; /* Navy Background */
             color: #F3F4F6;
         }
+        
+        /* Make cards a slightly lighter blue so they stand out */
         body.dark-mode .card {
-            background: #1A4B8C !important;
+            background: #1A4B8C !important; 
             color: #FFFFFF;
         }
-        body.dark-mode h2, body.dark-mode h3, body.dark-mode p {
+        
+        /* Ensure text is visible inside the cards */
+        body.dark-mode h2, 
+        body.dark-mode h3, 
+        body.dark-mode p,
+        body.dark-mode label,
+        body.dark-mode span {
             color: #FFFFFF !important;
         }
+
+        /* Make sure inputs and dropdowns are visible */
+        body.dark-mode input, 
+        body.dark-mode select, 
+        body.dark-mode textarea {
+            background: #0A1E3D !important;
+            color: #FFFFFF !important;
+            border-color: #1A4B8C !important;
+        }
+
+        /* Header and Nav colors */
         body.dark-mode .app-header {
             background: #051024;
         }
@@ -52,6 +71,7 @@
         }
         body.dark-mode .app-nav a.active {
             color: #C9A961;
+            background: #1A4B8C;
         }
 
         /* ---- TOP HEADER ---- */
@@ -95,7 +115,7 @@
             z-index: 100;
             box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
             
-            /* NEW: Enable horizontal scrolling */
+            /* Enable horizontal scrolling */
             overflow-x: auto;
             -webkit-overflow-scrolling: touch; 
             scrollbar-width: none; 
@@ -106,7 +126,7 @@
         }
 
         .app-nav a {
-            /* NEW: Fixed width so tabs don't squish */
+            /* Fixed width so tabs don't squish */
             flex: 0 0 75px; 
             display: flex;
             flex-direction: column;
@@ -120,7 +140,7 @@
         }
         .app-nav a.active {
             color: #0F1E3D;
-            background: #F8FAFC; /* Slight highlight for active tab */
+            background: #F8FAFC; 
         }
         .app-nav a .nav-icon {
             font-size: 20px;

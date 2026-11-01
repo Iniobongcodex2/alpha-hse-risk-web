@@ -82,7 +82,7 @@
             margin: 0 auto;
         }
 
-        /* ---- BOTTOM NAV ---- */
+        /* ---- BOTTOM NAV (SWIPEABLE) ---- */
         .app-nav {
             position: fixed;
             bottom: 0;
@@ -94,11 +94,20 @@
             display: flex;
             z-index: 100;
             box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+            
+            /* NEW: Enable horizontal scrolling */
             overflow-x: auto;
+            -webkit-overflow-scrolling: touch; 
+            scrollbar-width: none; 
         }
+        
+        .app-nav::-webkit-scrollbar {
+            display: none; 
+        }
+
         .app-nav a {
-            flex: 1;
-            min-width: 60px;
+            /* NEW: Fixed width so tabs don't squish */
+            flex: 0 0 75px; 
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -111,6 +120,7 @@
         }
         .app-nav a.active {
             color: #0F1E3D;
+            background: #F8FAFC; /* Slight highlight for active tab */
         }
         .app-nav a .nav-icon {
             font-size: 20px;
@@ -203,7 +213,7 @@
             <span>Inspect</span>
         </a>
 
-        <!-- NEW: Incidents Tab -->
+        <!-- Incidents Tab -->
         <a href="/incidents" class="{% if active == 'incidents' %}active{% endif %}">
             <span class="nav-icon">🚨</span>
             <span>Incident</span>

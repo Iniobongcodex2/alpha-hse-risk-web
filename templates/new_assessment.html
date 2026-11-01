@@ -5,6 +5,7 @@
 {% block content %}
 
 <form method="POST" action="/new" id="assessment-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <!-- ASSESSMENT DETAILS -->
     <div class="card">
@@ -75,13 +76,25 @@
             <div style="display:flex; gap:10px;">
                 <div style="flex:1;">
                     <label style="font-size:13px; color:#6B7280; font-weight:600;">Severity (1-5)</label>
-                    <input type="number" name="severity[]" min="1" max="5" placeholder="1-5" required
-                           style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+                    <select name="severity[]" required
+                            style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+                        <option value="1">1 - Minor</option>
+                        <option value="2">2 - Low</option>
+                        <option value="3">3 - Moderate</option>
+                        <option value="4">4 - Major</option>
+                        <option value="5">5 - Fatal/Critical</option>
+                    </select>
                 </div>
                 <div style="flex:1;">
                     <label style="font-size:13px; color:#6B7280; font-weight:600;">Likelihood (1-5)</label>
-                    <input type="number" name="likelihood[]" min="1" max="5" placeholder="1-5" required
-                           style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+                    <select name="likelihood[]" required
+                            style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+                        <option value="1">1 - Rare</option>
+                        <option value="2">2 - Unlikely</option>
+                        <option value="3">3 - Possible</option>
+                        <option value="4">4 - Likely</option>
+                        <option value="5">5 - Almost Certain</option>
+                    </select>
                 </div>
             </div>
 
@@ -96,34 +109,44 @@
             <div style="display:flex; gap:10px;">
                 <div style="flex:1;">
                     <label style="font-size:13px; color:#6B7280; font-weight:600;">Residual Severity</label>
-                    <input type="number" name="residual_severity[]" min="1" max="5" placeholder="1-5" required
-                           style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+                    <select name="residual_severity[]" required
+                            style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+                        <option value="1">1 - Minor</option>
+                        <option value="2">2 - Low</option>
+                        <option value="3">3 - Moderate</option>
+                        <option value="4">4 - Major</option>
+                        <option value="5">5 - Fatal/Critical</option>
+                    </select>
                 </div>
                 <div style="flex:1;">
                     <label style="font-size:13px; color:#6B7280; font-weight:600;">Residual Likelihood</label>
-                    <input type="number" name="residual_likelihood[]" min="1" max="5" placeholder="1-5" required
-                           style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px;">
+                    <select name="residual_likelihood[]" required
+                            style="width:100%; padding:14px; margin:6px 0 14px; border:1px solid #E5E7EB; border-radius:8px; font-size:15px; background:#FFFFFF;">
+                        <option value="1">1 - Rare</option>
+                        <option value="2">2 - Unlikely</option>
+                        <option value="3">3 - Possible</option>
+                        <option value="4">4 - Likely</option>
+                        <option value="5">5 - Almost Certain</option>
+                    </select>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- BUTTONS -->
-    <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px; margin-bottom: 20px;">
-        <button type="submit" class="btn-primary btn-green" style="width:100%;">
+    <!-- BUTTONS (Fixed Alignment) -->
+    <div style="display:flex; flex-wrap: wrap; gap:10px; margin-top:10px; margin-bottom: 20px; justify-content: center;">
+        <button type="submit" class="btn-primary btn-green" style="flex: 1; min-width: 200px;">
             💾 Save Assessment
         </button>
         
-        <button type="button" onclick="addHazard()" class="btn-primary" style="background:#1A4B8C; color:#FFFFFF; width:100%;">
+        <button type="button" onclick="addHazard()" class="btn-primary" style="background:#1A4B8C; color:#FFFFFF; flex: 1; min-width: 200px;">
             ➕ Add Another Hazard
         </button>
         
-        <!-- CLEAR ALL BUTTON -->
-        <button type="button" onclick="clearAll()" class="btn-primary" style="background:#DC2626; color:#FFFFFF; width:100%;">
+        <button type="button" onclick="clearAll()" class="btn-primary" style="background:#DC2626; color:#FFFFFF; flex: 1; min-width: 200px;">
             🗑️ Clear All Data
         </button>
     </div>
-
 </form>
 
 <script>
@@ -151,14 +174,14 @@
         // Clone the first block
         const newBlock = firstBlock.cloneNode(true);
         
-        // Clear the input values in the new block
-        newBlock.querySelectorAll('input, textarea, select').forEach(input => {
-            if (input.type !== 'number') input.value = '';
+        // Clear the input values and reset dropdowns in the new block
+        newBlock.querySelectorAll('input, textarea').forEach(input => {
             input.value = '';
         });
-
-        // Reset the dropdown to the first option
-        newBlock.querySelector('.category-select').selectedIndex = 0;
+        newBlock.querySelectorAll('select').forEach(select => {
+            select.selectedIndex = 0;
+        });
+        
         newBlock.querySelector('.custom-category-div').style.display = 'none';
 
         // Update the Hazard Number title
@@ -193,24 +216,23 @@
     function clearAll() {
         if (confirm("Are you sure you want to clear the entire form? All unsaved data will be lost.")) {
             const form = document.getElementById('assessment-form');
-            form.reset(); // Resets all standard inputs
+            form.reset(); 
 
             const container = document.getElementById('hazards-container');
             const blocks = container.querySelectorAll('.hazard-block');
             
-            // Remove all extra hazard blocks, keeping only the first one
             for (let i = 1; i < blocks.length; i++) {
                 blocks[i].remove();
             }
             
-            // Reset the first block completely
             const firstBlock = container.querySelector('.hazard-block');
             if (firstBlock) {
-                firstBlock.querySelectorAll('input, textarea, select').forEach(input => {
+                firstBlock.querySelectorAll('input, textarea').forEach(input => {
                     input.value = '';
                 });
-                const select = firstBlock.querySelector('.category-select');
-                if (select) select.selectedIndex = 0;
+                firstBlock.querySelectorAll('select').forEach(select => {
+                    select.selectedIndex = 0;
+                });
                 
                 const customDiv = firstBlock.querySelector('.custom-category-div');
                 if (customDiv) customDiv.style.display = 'none';
@@ -226,12 +248,11 @@
         if (!form) return;
 
         form.addEventListener('submit', async function(event) {
-            event.preventDefault(); // Always stop default submission
+            event.preventDefault(); 
 
             const formData = new FormData(form);
             const assessment = {};
             
-            // Build the JSON object, preserving arrays for multiple hazards
             formData.forEach((value, key) => {
                 if (!assessment[key]) {
                     assessment[key] = [];
@@ -241,13 +262,17 @@
             assessment['saved_at'] = new Date().toISOString();
 
             try {
-                // Try to send to the server
+                // Wait 15 seconds before timing out (allows Render to wake up)
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+
                 let response = await fetch('/new', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
 
-                // If session expired and we got redirected to login
                 if (response.redirected && response.url.includes('/login')) {
                     alert("Your session expired. Please log in again.");
                     window.location.href = '/login';
@@ -255,12 +280,11 @@
                 }
 
                 if (response.ok) {
-                    window.location.href = '/history'; // Success!
+                    window.location.href = '/history'; 
                 } else {
                     throw new Error('Server returned an error');
                 }
             } catch (error) {
-                // FALLBACK: If the fetch fails (offline, server asleep, etc.)
                 let queue = [];
                 try {
                     queue = JSON.parse(localStorage.getItem('alpha_pending_assessments') || '[]');
@@ -277,7 +301,6 @@
                     'It will sync automatically when you are back online.'
                 );
 
-                // Reset the form so they can enter another one
                 form.reset();
                 const container = document.getElementById('hazards-container');
                 const blocks = container.querySelectorAll('.hazard-block');
@@ -286,7 +309,7 @@
                 const firstBlock = container.querySelector('.hazard-block');
                 if (firstBlock) {
                     firstBlock.querySelectorAll('input, textarea').forEach(input => input.value = '');
-                    firstBlock.querySelector('.category-select').selectedIndex = 0;
+                    firstBlock.querySelectorAll('select').forEach(select => select.selectedIndex = 0);
                     firstBlock.querySelector('.custom-category-div').style.display = 'none';
                     firstBlock.querySelector('.hazard-number').textContent = '1';
                 }

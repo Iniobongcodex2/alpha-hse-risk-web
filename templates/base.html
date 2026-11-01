@@ -28,19 +28,15 @@
             padding-bottom: 70px;
         }
 
-        /* ---- DARK MODE THEME (FIXED) ---- */
+        /* ---- DARK MODE THEME ---- */
         body.dark-mode {
-            background: #0A1E3D !important; /* Navy Background */
+            background: #0A1E3D !important;
             color: #F3F4F6;
         }
-        
-        /* Make cards a slightly lighter blue so they stand out */
         body.dark-mode .card {
             background: #1A4B8C !important; 
             color: #FFFFFF;
         }
-        
-        /* Ensure text is visible inside the cards */
         body.dark-mode h2, 
         body.dark-mode h3, 
         body.dark-mode p,
@@ -48,8 +44,6 @@
         body.dark-mode span {
             color: #FFFFFF !important;
         }
-
-        /* Make sure inputs and dropdowns are visible */
         body.dark-mode input, 
         body.dark-mode select, 
         body.dark-mode textarea {
@@ -57,8 +51,6 @@
             color: #FFFFFF !important;
             border-color: #1A4B8C !important;
         }
-
-        /* Header and Nav colors */
         body.dark-mode .app-header {
             background: #051024;
         }
@@ -102,7 +94,7 @@
             margin: 0 auto;
         }
 
-        /* ---- BOTTOM NAV (SWIPEABLE) ---- */
+        /* ---- BOTTOM NAV (SWIPEABLE & CENTERED) ---- */
         .app-nav {
             position: fixed;
             bottom: 0;
@@ -112,6 +104,10 @@
             background: #FFFFFF;
             border-top: 1px solid #E5E7EB;
             display: flex;
+            
+            /* NEW: Center the tabs on desktop */
+            justify-content: center; 
+            
             z-index: 100;
             box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
             
@@ -145,6 +141,13 @@
         .app-nav a .nav-icon {
             font-size: 20px;
             margin-bottom: 2px;
+        }
+
+        /* Mobile Override: Start from left if it overflows */
+        @media (max-width: 768px) {
+            .app-nav {
+                justify-content: flex-start;
+            }
         }
 
         /* ---- CARDS / TILES ---- */
@@ -192,6 +195,11 @@
     <div class="app-header">
         <h1>{% block header_title %}ALPHA HSE RISK{% endblock %}</h1>
         <button onclick="toggleDarkMode()" style="position: absolute; right: 15px; background: none; border: none; font-size: 20px; cursor: pointer;">🌙</button>
+    </div>
+
+    <!-- NEW: Pending Sync Indicator -->
+    <div id="sync-indicator" style="display: none; position: fixed; top: 60px; left: 0; right: 0; background: #FEF3C7; color: #92400E; text-align: center; font-size: 12px; font-weight: bold; padding: 5px; z-index: 99;">
+        🟡 Pending Sync
     </div>
 
     <div class="app-content">
@@ -288,7 +296,19 @@
             if (!navigator.onLine) return;
             let queue = [];
             try { queue = JSON.parse(localStorage.getItem('alpha_pending_assessments') || '[]'); } catch (e) { return; }
-            if (queue.length === 0) return;
+            
+            const indicator = document.getElementById('sync-indicator');
+            
+            if (queue.length === 0) {
+                if(indicator) indicator.style.display = 'none';
+                return;
+            }
+
+            if(indicator) {
+                indicator.style.display = 'block';
+                indicator.textContent = `🟡 ${queue.length} Pending Sync`;
+            }
+
             let remaining = [];
             let syncedCount = 0;
             for (let item of queue) {

@@ -5,6 +5,9 @@
 {% block content %}
 
 <form method="POST" action="/log-activity">
+    <!-- CSRF Token for Security -->
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
     <div class="card">
         <h2 style="font-size:15px; color:#0F1E3D; margin-bottom:14px;">Activity Details</h2>
 

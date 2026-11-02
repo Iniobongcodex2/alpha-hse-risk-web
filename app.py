@@ -2230,6 +2230,12 @@ def new_inspection():
 
     return render_template("new_inspection.html", active="inspections", facilities=facilities)
 
+@app.route("/how-to-use")
+def how_to_use():
+    if "username" not in session:
+        return redirect(url_for("login"))
+    return render_template("how_to_use.html", active="profile")
+
 @app.route("/profile")
 def profile():
     if "username" not in session:

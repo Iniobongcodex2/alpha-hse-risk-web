@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}How to Use - ALPHA HSE RISK{% endblock %}
+{% block header_title %}User Manual{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <h2 style="font-size:16px; color:#0A1E3D; margin-bottom:15px;">Quick Start Guide</h2>
+    
+    <h3 style="font-size:14px; color:#1A4B8C; margin-bottom:5px;">1. Risk Assessments</h3>
+    <p style="font-size:13px; color:#4B5563; margin-bottom:15px;">Navigate to the 'New' tab to create a new risk assessment. Fill in the hazard details, select the severity and likelihood, and download the generated PDF report.</p>
+
+    <h3 style="font-size:14px; color:#1A4B8C; margin-bottom:5px;">2. Reporting Observations & Incidents</h3>
+    <p style="font-size:13px; color:#4B5563; margin-bottom:15px;">Use the 'Observe' or 'Incident' tabs to log events. You can assign corrective actions and track them to completion.</p>
+
+    <h3 style="font-size:14px; color:#1A4B8C; margin-bottom:5px;">3. Inspections</h3>
+    <p style="font-size:13px; color:#4B5563; margin-bottom:15px;">Go to the 'Inspect' tab to fill out a facility checklist. Failed items will automatically generate corrective actions.</p>
+
+    <h3 style="font-size:14px; color:#1A4B8C; margin-bottom:5px;">4. Admin & Users</h3>
+    <p style="font-size:13px; color:#4B5563; margin-bottom:15px;">If you are an Administrator, use the 'Admin' tab to manage facilities and invite new users to your organization.</p>
+</div>
+
+<a href="/profile" class="btn-primary" style="margin-top: 20px; display: block; text-align: center; text-decoration: none;">
+    ← Back to Profile
+</a>
+
+{% endblock %}

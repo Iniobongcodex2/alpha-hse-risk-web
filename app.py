@@ -356,6 +356,23 @@ def setup_database():
     if 'persons_at_risk' not in assess_cols:
         cursor.execute("ALTER TABLE assessments ADD COLUMN persons_at_risk TEXT")
 
+    # ============================================
+    # STAGE 24: NEBOSH GIC2 Learning Mode Backend
+    # ============================================
+    if is_postgres:
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='assessments'")
+        assess_cols = [row[0] for row in cursor.fetchall()]
+    else:
+        cursor.execute("PRAGMA table_info(assessments)")
+        assess_cols = [row[1] for row in cursor.fetchall()]
+
+    if 'assessment_mode' not in assess_cols:
+        cursor.execute("ALTER TABLE assessments ADD COLUMN assessment_mode TEXT DEFAULT 'Professional HSE Mode'")
+    if 'work_activity' not in assess_cols:
+        cursor.execute("ALTER TABLE assessments ADD COLUMN work_activity TEXT")
+    if 'persons_at_risk' not in assess_cols:
+        cursor.execute("ALTER TABLE assessments ADD COLUMN persons_at_risk TEXT")    
+
     conn.commit()
     cursor.close()
     conn.close()
@@ -726,11 +743,10 @@ def new_assessment():
         location = request.form.get("location", "").strip()
         project = request.form.get("project", "").strip()
         
-        # --- NEW: Grab GIC2 variables ---
-        assessment_mode = request.form.get("assessment_mode", "Professional")
+        # Grab GIC2 variables
+        assessment_mode = request.form.get("assessment_mode", "Professional HSE Mode").strip()
         work_activity = request.form.get("work_activity", "").strip()
         persons_at_risk = request.form.get("persons_at_risk", "").strip()
-        # --------------------------------
         
         categories = request.form.getlist("category[]")
         custom_categories = request.form.getlist("custom_category[]")
@@ -755,7 +771,6 @@ def new_assessment():
             
             if is_postgres:
                 cursor = conn.cursor()
-                # --- NEW: Updated INSERT to include GIC2 fields ---
                 cursor.execute(f"""
                     INSERT INTO assessments
                     (reference, organization, department, location, assessor, project, date_created, assessment_mode, work_activity, persons_at_risk)
@@ -764,7 +779,6 @@ def new_assessment():
                 assessment_id = cursor.fetchone()[0]
             else:
                 cursor = conn.cursor()
-                # --- NEW: Updated INSERT to include GIC2 fields ---
                 cursor.execute(f"""
                     INSERT INTO assessments
                     (reference, organization, department, location, assessor, project, date_created, assessment_mode, work_activity, persons_at_risk)
@@ -1059,16 +1073,37 @@ def assessment_pdf(assessment_id):
             Paragraph("ALPHA HSE RISK ASSESSMENT", title_style),
             Paragraph("Professional Risk Management System", subtitle_style),
         ]
-
         header_data = [
             ["Reference:", assessment.get("reference")],
             ["Organization:", assessment.get("organization")],
+            ["Mode:", assessment.get("assessment_mode") or "Professional HSE Mode"],
+        ]
+        
+        # If it's a NEBOSH assessment, show the extra context
+        if assessment.get("work_activity"):
+         header_data.extend([
+                ["Work Activity:", assessment.get("work_activity")],
+                ["Persons at Risk:", assessment.get("persons_at_risk")],
+            ])
+            
+         header_data.extend([
             ["Department:", assessment.get("department")],
             ["Location / Site:", assessment.get("location")],
             ["Assessor:", assessment.get("assessor")],
             ["Project:", assessment.get("project")],
             ["Date:", assessment.get("date_created")],
-        ]
+        ])
+
+       
+        # --- NEW: ADD NEBOSH FIELDS IF APPLICABLE ---
+        if assessment.get("assessment_mode") and assessment.get("assessment_mode") == "NEBOSH GIC2 Learning Mode":
+            header_data.append(["Mode:", "NEBOSH GIC2 Learning Mode"])
+            if assessment.get("work_activity"):
+                header_data.append(["Work Activity:", assessment.get("work_activity")])
+            if assessment.get("persons_at_risk"):
+                header_data.append(["Persons at Risk:", assessment.get("persons_at_risk")])
+        # ---------------------------------------------
+
         elements.append(make_table(header_data, [1.45 * inch, 5.25 * inch]))
         elements.append(Spacer(1, 14))
 
@@ -1131,7 +1166,7 @@ def assessment_pdf(assessment_id):
     finally:
         if conn is not None:
             conn.close()
-
+            
 @app.route("/assessment/<int:assessment_id>/excel")
 def assessment_excel(assessment_id):
     if "username" not in session:

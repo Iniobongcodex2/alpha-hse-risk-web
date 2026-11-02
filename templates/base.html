@@ -124,7 +124,7 @@
         }
 
         .app-nav a {
-            flex: 0 0 75px; 
+            flex: 0 0 80px; /* INCREASED WIDTH SLIGHTLY for "Management" text */
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -249,7 +249,7 @@
         {% if session.get('role_id') in (2, 3, 4) %}
         <a href="/management-engagement" class="{% if active == 'management' %}active{% endif %}">
             <span class="nav-icon">👔</span>
-            <span>Mgmt</span>
+            <span>Management</span>
         </a>
         {% endif %}
 
